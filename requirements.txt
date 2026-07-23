@@ -1,6 +1,9 @@
-streamlit>=1.36,<2.0
+streamlit>=1.42,<2.0
 pandas>=2.2,<3.0
-numpy>=1.26,<3.0
-scikit-learn>=1.5,<2.0
-google-api-python-client>=2.137,<3.0
+numpy>=2.0,<3.0
+scikit-learn>=1.6,<2.0
+google-api-python-client>=2.160,<3.0
+google-auth>=2.38,<3.0
+google-auth-httplib2>=0.2,<1.0
+httplib2>=0.22,<1.0
 youtube-transcript-api>=1.0,<2.0
