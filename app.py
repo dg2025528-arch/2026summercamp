@@ -13,7 +13,6 @@ from sklearn.feature_extraction.text import (
     TfidfVectorizer,
 )
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import MinMaxScaler
 from youtube_transcript_api import YouTubeTranscriptApi
 
 
@@ -22,18 +21,16 @@ from youtube_transcript_api import YouTubeTranscriptApi
 # =========================================================
 
 st.set_page_config(
-    page_title="YouTube TF-IDF 영상 추천",
+    page_title="YouTube TF-IDF 분석 및 코사인 추천",
     page_icon="🎬",
     layout="wide",
 )
 
-SEARCH_RELEVANCE_WEIGHT = 0.45
-TITLE_SIMILARITY_WEIGHT = 0.45
-POPULARITY_WEIGHT = 0.10
-
-MINIMUM_TITLE_SIMILARITY = 0.08
-MAX_TFIDF_FEATURES = 1000
+MAX_TFIDF_FEATURES = 1500
 MAX_TRANSCRIPT_CHARACTERS = 30000
+
+# 이 값보다 낮은 영상은 추천하지 않습니다.
+MINIMUM_COSINE_SIMILARITY = 0.08
 
 
 # =========================================================
@@ -85,6 +82,9 @@ def limit_text(
 
 
 def tokenize_mixed_text(text):
+    """
+    한국어·영어를 함께 처리하는 TF-IDF 토크나이저입니다.
+    """
     text = clean_text(text).lower()
 
     tokens = re.findall(
@@ -118,6 +118,7 @@ def split_sentences(text):
         if 15 <= len(sentence.strip()) <= 600
     ]
 
+    # 자동 생성 자막처럼 문장부호가 부족한 경우
     if len(sentences) <= 1 and len(text) > 400:
         chunk_size = 250
 
@@ -131,7 +132,7 @@ def split_sentences(text):
 
 
 # =========================================================
-# 4. 업로드 자막 처리
+# 4. 자막 파일 업로드 처리
 # =========================================================
 
 def decode_uploaded_file(uploaded_file):
@@ -217,7 +218,7 @@ def read_uploaded_subtitle(uploaded_file):
 
 
 # =========================================================
-# 5. URL 및 YouTube Data API
+# 5. YouTube URL 및 Data API
 # =========================================================
 
 def extract_video_id(url):
@@ -230,6 +231,7 @@ def extract_video_id(url):
         return url
 
     parsed = urlparse(url)
+
     hostname = (
         parsed.hostname or ""
     ).lower().replace("www.", "")
@@ -262,6 +264,7 @@ def extract_video_id(url):
             }
         ):
             candidate = path_parts[1]
+
             return (
                 candidate
                 if len(candidate) == 11
@@ -283,6 +286,7 @@ def get_api_key():
 
         if key:
             return key
+
     except (KeyError, FileNotFoundError):
         pass
 
@@ -348,7 +352,12 @@ def get_video_details(video_id, api_key):
 
     views = int(statistics.get("viewCount", 0))
     likes = int(statistics.get("likeCount", 0))
-    published_at = snippet.get("publishedAt", "")
+
+    published_at = snippet.get(
+        "publishedAt",
+        "",
+    )
+
     days = calculate_days_since_upload(
         published_at
     )
@@ -377,11 +386,15 @@ def get_video_details(video_id, api_key):
 
 
 # =========================================================
-# 6. 입력 영상 자막 수집
+# 6. 자막 수집
 # =========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_transcript(video_id):
+    """
+    입력 영상 한 개의 자막만 수집합니다.
+    """
+
     def create_result(
         success=False,
         text="",
@@ -407,7 +420,9 @@ def get_transcript(video_id):
 
     try:
         api = YouTubeTranscriptApi()
+
         transcript_list = api.list(video_id)
+
         transcripts = list(transcript_list)
 
     except Exception as error:
@@ -480,6 +495,7 @@ def get_transcript(video_id):
         return 5
 
     transcripts.sort(key=priority)
+
     errors = []
 
     for transcript in transcripts:
@@ -491,6 +507,7 @@ def get_transcript(video_id):
 
         try:
             fetched = transcript.fetch()
+
             text_parts = []
 
             for snippet in fetched:
@@ -508,7 +525,9 @@ def get_transcript(video_id):
                         )
                     )
 
-            text = clean_text(" ".join(text_parts))
+            text = clean_text(
+                " ".join(text_parts)
+            )
 
             if len(tokenize_mixed_text(text)) >= 5:
                 return create_result(
@@ -558,22 +577,25 @@ def get_transcript(video_id):
 
                 fetched = translated.fetch()
 
-                text = clean_text(
-                    " ".join(
-                        str(
-                            getattr(
-                                snippet,
-                                "text",
-                                "",
-                            )
-                        ).replace("\n", " ")
-                        for snippet in fetched
-                        if getattr(
-                            snippet,
-                            "text",
-                            "",
-                        )
+                text_parts = []
+
+                for snippet in fetched:
+                    snippet_text = getattr(
+                        snippet,
+                        "text",
+                        "",
                     )
+
+                    if snippet_text:
+                        text_parts.append(
+                            str(snippet_text).replace(
+                                "\n",
+                                " ",
+                            )
+                        )
+
+                text = clean_text(
+                    " ".join(text_parts)
                 )
 
                 if len(
@@ -598,8 +620,7 @@ def get_transcript(video_id):
                 errors.append(
                     f"{source_language} → "
                     f"{target_language}: "
-                    f"{type(error).__name__}: "
-                    f"{error}"
+                    f"{type(error).__name__}: {error}"
                 )
 
     return create_result(
@@ -610,14 +631,98 @@ def get_transcript(video_id):
 
 
 # =========================================================
-# 7. TF-IDF 요약 및 키워드
+# 7. 입력 데이터 준비
 # =========================================================
 
-def summarize_with_tfidf(
+def prepare_source_data(
+    video_id,
+    source_details,
+    manual_transcript,
+    uploaded_subtitle,
+):
+    """
+    자막 사용 우선순위:
+    1. 직접 입력
+    2. 파일 업로드
+    3. YouTube 자동 수집
+    4. 제목·설명 대체
+    """
+
+    if manual_transcript.strip():
+        return {
+            "text": limit_text(manual_transcript),
+            "label": "사용자가 직접 입력한 자막",
+            "transcript_result": None,
+        }
+
+    if uploaded_subtitle is not None:
+        return {
+            "text": read_uploaded_subtitle(
+                uploaded_subtitle
+            ),
+            "label": (
+                f"업로드 자막: "
+                f"{uploaded_subtitle.name}"
+            ),
+            "transcript_result": None,
+        }
+
+    transcript_result = get_transcript(video_id)
+
+    if transcript_result["success"]:
+        if transcript_result["translated"]:
+            label = "YouTube 번역 자막"
+
+        elif transcript_result["generated"]:
+            label = "YouTube 자동 생성 자막"
+
+        else:
+            label = "YouTube 수동 등록 자막"
+
+        return {
+            "text": transcript_result["text"],
+            "label": label,
+            "transcript_result": transcript_result,
+        }
+
+    fallback_text = " ".join(
+        [
+            source_details["title"],
+            source_details["title"],
+            source_details["description"],
+        ]
+    )
+
+    if len(
+        tokenize_mixed_text(fallback_text)
+    ) < 5:
+        raise ValueError(
+            "자막 자동 수집에 실패했고 영상 설명도 "
+            "부족합니다. 자막을 직접 입력하거나 "
+            "자막 파일을 업로드하세요."
+        )
+
+    return {
+        "text": fallback_text,
+        "label": "자막 수집 실패: 제목·설명 사용",
+        "transcript_result": transcript_result,
+    }
+
+
+# =========================================================
+# 8. TF-IDF 분석
+# =========================================================
+
+def analyze_tfidf(
     text,
     sentence_count=5,
     keyword_count=20,
 ):
+    """
+    TF-IDF 분석 결과만 생성합니다.
+    추천 영상 계산과 분리되어 있습니다.
+    """
+
     sentences = split_sentences(text)
 
     if not sentences:
@@ -635,7 +740,10 @@ def summarize_with_tfidf(
         max_features=MAX_TFIDF_FEATURES,
     )
 
-    matrix = vectorizer.fit_transform(sentences)
+    matrix = vectorizer.fit_transform(
+        sentences
+    )
+
     feature_names = (
         vectorizer.get_feature_names_out()
     )
@@ -666,12 +774,14 @@ def summarize_with_tfidf(
         [
             {
                 "중요도 순위": rank + 1,
-                "원래 순서": int(index + 1),
+                "원래 문장 순서": int(
+                    index + 1
+                ),
                 "TF-IDF 문장 점수": round(
                     float(
                         sentence_scores[index]
                     ),
-                    4,
+                    6,
                 ),
                 "문장": sentences[index],
             }
@@ -701,7 +811,7 @@ def summarize_with_tfidf(
                 len(keyword_indices) + 1,
             ),
             "단어 또는 구": keywords,
-            "TF-IDF 점수": [
+            "전체 TF-IDF 점수": [
                 round(
                     float(
                         total_term_scores[index]
@@ -713,194 +823,133 @@ def summarize_with_tfidf(
         }
     )
 
+    sentence_feature_columns = [
+        (
+            f"tfidf_{index:04d}_"
+            f"{feature.replace(' ', '_')}"
+        )
+        for index, feature in enumerate(
+            feature_names
+        )
+    ]
+
+    sentence_feature_df = pd.DataFrame(
+        matrix.toarray(),
+        columns=sentence_feature_columns,
+    )
+
+    sentence_feature_df.insert(
+        0,
+        "sentence",
+        sentences,
+    )
+
+    sentence_feature_df.insert(
+        1,
+        "sentence_tfidf_score",
+        sentence_scores,
+    )
+
     return {
         "summary": summary,
         "keywords": keywords,
         "sentence_scores": sentence_df,
         "keyword_scores": keyword_df,
+        "sentence_features": sentence_feature_df,
     }
 
 
 # =========================================================
-# 8. 검색어 생성 및 후보 검색
+# 9. 검색어 생성 및 후보 영상 검색
 # =========================================================
 
-def build_search_queries(
+def build_search_query(
     source_title,
     keywords,
+    custom_query="",
 ):
-    single_word_keywords = []
-
-    for keyword in keywords:
-        keyword = clean_text(keyword)
-
-        for part in keyword.split():
-            if (
-                len(part) >= 2
-                and part
-                not in single_word_keywords
-            ):
-                single_word_keywords.append(part)
+    if custom_query.strip():
+        return clean_text(
+            custom_query
+        )[:100]
 
     title_tokens = tokenize_mixed_text(
         source_title
     )
 
-    unique_title_tokens = []
+    keyword_tokens = []
 
-    for token in title_tokens:
-        if token not in unique_title_tokens:
-            unique_title_tokens.append(token)
+    for keyword in keywords:
+        for token in keyword.split():
+            token = clean_text(token)
 
-    queries = []
+            if (
+                len(token) >= 2
+                and token not in keyword_tokens
+            ):
+                keyword_tokens.append(token)
 
-    if unique_title_tokens:
-        queries.append(
-            " ".join(
-                unique_title_tokens[:4]
-            )
-        )
+    query_tokens = []
 
-    if single_word_keywords:
-        queries.append(
-            " ".join(
-                single_word_keywords[:4]
-            )
-        )
+    for token in (
+        title_tokens[:3]
+        + keyword_tokens[:3]
+    ):
+        if token not in query_tokens:
+            query_tokens.append(token)
 
-    mixed_query = " ".join(
-        unique_title_tokens[:2]
-        + single_word_keywords[:2]
-    ).strip()
-
-    if mixed_query:
-        queries.append(mixed_query)
-
-    if unique_title_tokens:
-        queries.append(
-            " ".join(
-                unique_title_tokens[:2]
-            )
-        )
-
-    unique_queries = []
-
-    for query in queries:
-        query = clean_text(query)[:100]
-
-        if (
-            query
-            and query not in unique_queries
-        ):
-            unique_queries.append(query)
-
-    return unique_queries
+    return " ".join(query_tokens)[:100]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_candidate_videos(
-    queries,
+    query,
     api_key,
     max_results=20,
 ):
+    """
+    후보 검색은 한 번만 수행합니다.
+    코사인 유사도 정렬에는 검색 순위를 사용하지 않습니다.
+    """
+
     youtube = get_youtube_client(api_key)
 
-    if isinstance(queries, str):
-        queries = [queries]
+    response = (
+        youtube.search()
+        .list(
+            part="snippet",
+            q=query,
+            type="video",
+            maxResults=min(
+                max_results,
+                50,
+            ),
+            order="relevance",
+            safeSearch="moderate",
+        )
+        .execute()
+    )
 
-    collected_video_ids = []
-    search_log = []
+    video_ids = [
+        item["id"]["videoId"]
+        for item in response.get(
+            "items",
+            [],
+        )
+        if item.get(
+            "id",
+            {},
+        ).get("videoId")
+    ]
 
-    # API 할당량을 줄이기 위해 최대 2개의 검색어만 사용합니다.
-    for query in queries[:2]:
-        if not query.strip():
-            continue
-
-        try:
-            response = (
-                youtube.search()
-                .list(
-                    part="snippet",
-                    q=query,
-                    type="video",
-                    maxResults=min(
-                        max_results,
-                        50,
-                    ),
-                    order="relevance",
-                    safeSearch="moderate",
-                )
-                .execute()
-            )
-
-            current_ids = [
-                item["id"]["videoId"]
-                for item in response.get(
-                    "items",
-                    [],
-                )
-                if item.get(
-                    "id",
-                    {},
-                ).get("videoId")
-            ]
-
-            search_log.append(
-                {
-                    "검색어": query,
-                    "결과 수": len(
-                        current_ids
-                    ),
-                    "오류": "",
-                }
-            )
-
-            for video_id in current_ids:
-                if (
-                    video_id
-                    not in collected_video_ids
-                ):
-                    collected_video_ids.append(
-                        video_id
-                    )
-
-                if (
-                    len(collected_video_ids)
-                    >= max_results
-                ):
-                    break
-
-            if (
-                len(collected_video_ids)
-                >= max_results
-            ):
-                break
-
-        except Exception as error:
-            search_log.append(
-                {
-                    "검색어": query,
-                    "결과 수": 0,
-                    "오류": (
-                        f"{type(error).__name__}: "
-                        f"{error}"
-                    ),
-                }
-            )
-
-    if not collected_video_ids:
-        return {
-            "candidates": [],
-            "search_log": search_log,
-        }
+    if not video_ids:
+        return []
 
     detail_response = (
         youtube.videos()
         .list(
             part="snippet,statistics",
-            id=",".join(
-                collected_video_ids[:50]
-            ),
+            id=",".join(video_ids),
         )
         .execute()
     )
@@ -915,10 +964,7 @@ def search_candidate_videos(
 
     candidates = []
 
-    for search_rank, video_id in enumerate(
-        collected_video_ids,
-        start=1,
-    ):
+    for video_id in video_ids:
         item = detail_items.get(video_id)
 
         if not item:
@@ -936,10 +982,20 @@ def search_candidate_videos(
             "",
         )
 
-        if (
-            not clean_text(title)
-            and not clean_text(description)
-        ):
+        candidate_text = clean_text(
+            " ".join(
+                [
+                    title,
+                    title,
+                    title,
+                    description,
+                ]
+            )
+        )
+
+        if len(
+            tokenize_mixed_text(candidate_text)
+        ) < 2:
             continue
 
         views = int(
@@ -970,6 +1026,7 @@ def search_candidate_videos(
                 "video_id": video_id,
                 "title": title,
                 "description": description,
+                "comparison_text": candidate_text,
                 "channel_title": snippet.get(
                     "channelTitle",
                     "",
@@ -985,54 +1042,101 @@ def search_candidate_videos(
                     "https://www.youtube.com/"
                     f"watch?v={video_id}"
                 ),
-                "search_rank": search_rank,
             }
         )
 
-    return {
-        "candidates": candidates,
-        "search_log": search_log,
-    }
+    return candidates
 
 
 # =========================================================
-# 9. 추천 모델
+# 10. 코사인 유사도 추천
 # =========================================================
 
-def normalize_log_values(values):
-    values = np.asarray(
-        values,
-        dtype=float,
-    )
-
-    if len(values) == 0:
-        return values
-
-    logged = np.log1p(
-        values
-    ).reshape(-1, 1)
-
-    if (
-        len(values) == 1
-        or np.allclose(
-            logged,
-            logged[0],
-        )
-    ):
-        return np.zeros(len(values))
-
-    return (
-        MinMaxScaler()
-        .fit_transform(logged)
-        .ravel()
-    )
-
-
-def create_orange_title_features(
-    title_matrix,
-    vectorizer,
-    all_results,
+def calculate_cosine_recommendations(
+    source_title,
+    tfidf_result,
+    candidates,
 ):
+    """
+    추천 결과는 TF-IDF 벡터의 코사인 유사도로만 결정합니다.
+
+    검색 순위, 조회수, 좋아요는 정렬 점수에 넣지 않습니다.
+    """
+
+    if not candidates:
+        return (
+            pd.DataFrame(),
+            pd.DataFrame(),
+        )
+
+    source_comparison_text = " ".join(
+        [
+            source_title,
+            source_title,
+            source_title,
+            tfidf_result["summary"],
+            " ".join(
+                tfidf_result["keywords"][:15]
+            ),
+        ]
+    )
+
+    candidate_texts = [
+        candidate["comparison_text"]
+        for candidate in candidates
+    ]
+
+    vectorizer = TfidfVectorizer(
+        tokenizer=tokenize_mixed_text,
+        token_pattern=None,
+        lowercase=False,
+        ngram_range=(1, 2),
+        min_df=1,
+        sublinear_tf=True,
+        max_features=MAX_TFIDF_FEATURES,
+    )
+
+    matrix = vectorizer.fit_transform(
+        [source_comparison_text]
+        + candidate_texts
+    )
+
+    source_vector = matrix[0:1]
+    candidate_vectors = matrix[1:]
+
+    similarities = cosine_similarity(
+        source_vector,
+        candidate_vectors,
+    ).ravel()
+
+    rows = []
+
+    for index, candidate in enumerate(
+        candidates
+    ):
+        row = candidate.copy()
+
+        row["cosine_similarity"] = float(
+            similarities[index]
+        )
+
+        rows.append(row)
+
+    all_results = pd.DataFrame(rows)
+
+    # 최소 기준을 통과한 영상만 추천합니다.
+    recommendation_df = all_results[
+        all_results["cosine_similarity"]
+        >= MINIMUM_COSINE_SIMILARITY
+    ].copy()
+
+    recommendation_df = (
+        recommendation_df.sort_values(
+            by="cosine_similarity",
+            ascending=False,
+        ).reset_index(drop=True)
+    )
+
     feature_names = (
         vectorizer.get_feature_names_out()
     )
@@ -1048,30 +1152,24 @@ def create_orange_title_features(
     ]
 
     feature_df = pd.DataFrame(
-        title_matrix.toarray(),
+        candidate_vectors.toarray(),
         columns=feature_columns,
     )
 
-    metadata_columns = [
-        "video_id",
-        "title",
-        "channel_title",
-        "url",
-        "search_rank",
-        "title_similarity",
-        "search_relevance_score",
-        "views",
-        "likes",
-        "daily_views",
-        "popularity_score",
-        "final_score",
-    ]
-
     metadata_df = all_results[
-        metadata_columns
+        [
+            "video_id",
+            "title",
+            "channel_title",
+            "url",
+            "views",
+            "likes",
+            "daily_views",
+            "cosine_similarity",
+        ]
     ].reset_index(drop=True)
 
-    return pd.concat(
+    orange_df = pd.concat(
         [
             metadata_df,
             feature_df.reset_index(
@@ -1081,177 +1179,84 @@ def create_orange_title_features(
         axis=1,
     )
 
+    return recommendation_df, orange_df
 
-def calculate_recommendations(
+
+def create_pair_tfidf_table(
     source_title,
-    source_keywords,
-    candidates,
+    tfidf_result,
+    candidate,
+    maximum_terms=30,
 ):
-    if not candidates:
-        return (
-            pd.DataFrame(),
-            pd.DataFrame(),
-        )
+    """
+    입력 영상과 선택된 추천 영상의 TF-IDF 값을 표로 만듭니다.
+    """
 
-    source_query_text = " ".join(
+    source_text = " ".join(
         [
             source_title,
             source_title,
+            source_title,
+            tfidf_result["summary"],
             " ".join(
-                source_keywords[:10]
+                tfidf_result["keywords"][:15]
             ),
         ]
     )
 
-    candidate_title_texts = [
-        " ".join(
-            [
-                candidate["title"],
-                candidate["title"],
-            ]
-        )
-        for candidate in candidates
+    comparison_text = candidate[
+        "comparison_text"
     ]
 
-    title_vectorizer = TfidfVectorizer(
+    vectorizer = TfidfVectorizer(
         tokenizer=tokenize_mixed_text,
         token_pattern=None,
         lowercase=False,
-        ngram_range=(1, 2),
-        sublinear_tf=True,
-        max_features=800,
+        ngram_range=(1, 1),
+        norm=None,
+        use_idf=True,
+        smooth_idf=True,
+        max_features=MAX_TFIDF_FEATURES,
     )
 
-    title_matrix = (
-        title_vectorizer.fit_transform(
-            [source_query_text]
-            + candidate_title_texts
-        )
-    )
-
-    title_similarities = (
-        cosine_similarity(
-            title_matrix[0:1],
-            title_matrix[1:],
-        ).ravel()
-    )
-
-    search_ranks = np.array(
+    matrix = vectorizer.fit_transform(
         [
-            candidate.get(
-                "search_rank",
-                index + 1,
-            )
-            for index, candidate in enumerate(
-                candidates
-            )
-        ],
-        dtype=float,
-    )
-
-    if len(search_ranks) == 1:
-        search_relevance_scores = (
-            np.ones(1)
-        )
-
-    else:
-        maximum_rank = float(
-            np.max(search_ranks)
-        )
-
-        search_relevance_scores = (
-            maximum_rank - search_ranks
-        ) / max(
-            maximum_rank - 1.0,
-            1.0,
-        )
-
-    normalized_views = normalize_log_values(
-        [
-            candidate["daily_views"]
-            for candidate in candidates
+            source_text,
+            comparison_text,
         ]
     )
 
-    normalized_likes = normalize_log_values(
-        [
-            candidate["likes"]
-            for candidate in candidates
-        ]
+    terms = (
+        vectorizer.get_feature_names_out()
     )
 
-    popularity_scores = (
-        0.6 * normalized_views
-        + 0.4 * normalized_likes
+    idf_values = vectorizer.idf_
+
+    source_values = (
+        matrix[0].toarray().ravel()
     )
 
-    final_scores = (
-        SEARCH_RELEVANCE_WEIGHT
-        * search_relevance_scores
-        + TITLE_SIMILARITY_WEIGHT
-        * title_similarities
-        + POPULARITY_WEIGHT
-        * popularity_scores
+    candidate_values = (
+        matrix[1].toarray().ravel()
     )
 
-    rows = []
-
-    for index, candidate in enumerate(
-        candidates
-    ):
-        row = candidate.copy()
-
-        row["title_similarity"] = float(
-            title_similarities[index]
-        )
-
-        row[
-            "search_relevance_score"
-        ] = float(
-            search_relevance_scores[index]
-        )
-
-        row["popularity_score"] = float(
-            popularity_scores[index]
-        )
-
-        row["final_score"] = float(
-            final_scores[index]
-        )
-
-        rows.append(row)
-
-    all_results = pd.DataFrame(rows)
-
-    orange_df = create_orange_title_features(
-        title_matrix=title_matrix[1:],
-        vectorizer=title_vectorizer,
-        all_results=all_results,
+    dataframe = pd.DataFrame(
+        {
+            "단어": terms,
+            "IDF": idf_values,
+            "입력 영상 TF-IDF": source_values,
+            "후보 영상 TF-IDF": candidate_values,
+            "두 영상 TF-IDF 합계": (
+                source_values
+                + candidate_values
+            ),
+        }
     )
 
-    # 기준 미달 결과는 강제로 추천하지 않습니다.
-    results = all_results[
-        all_results["title_similarity"]
-        >= MINIMUM_TITLE_SIMILARITY
-    ].copy()
-
-    if results.empty:
-        return results, orange_df
-
-    results = results.sort_values(
-        by=[
-            "final_score",
-            "title_similarity",
-            "search_rank",
-        ],
-        ascending=[
-            False,
-            False,
-            True,
-        ],
-    ).reset_index(drop=True)
-
-    return results, orange_df
+    return dataframe.sort_values(
+        by="두 영상 TF-IDF 합계",
+        ascending=False,
+    ).head(maximum_terms)
 
 
 def dataframe_to_csv_bytes(dataframe):
@@ -1261,26 +1266,159 @@ def dataframe_to_csv_bytes(dataframe):
 
 
 # =========================================================
-# 10. 화면 구성
+# 11. 세션 상태
+# =========================================================
+
+DEFAULT_SESSION_VALUES = {
+    "source_details": None,
+    "source_text": "",
+    "source_label": "",
+    "tfidf_result": None,
+    "recommendation_df": None,
+    "orange_df": None,
+    "search_query_used": "",
+    "candidate_lookup": {},
+}
+
+for key, value in DEFAULT_SESSION_VALUES.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+def reset_analysis_results():
+    st.session_state.source_details = None
+    st.session_state.source_text = ""
+    st.session_state.source_label = ""
+    st.session_state.tfidf_result = None
+    st.session_state.recommendation_df = None
+    st.session_state.orange_df = None
+    st.session_state.search_query_used = ""
+    st.session_state.candidate_lookup = {}
+
+
+# =========================================================
+# 12. 공통 분석 준비
+# =========================================================
+
+def load_source_and_tfidf(
+    youtube_url,
+    api_key,
+    manual_transcript,
+    uploaded_subtitle,
+    sentence_count,
+):
+    video_id = extract_video_id(youtube_url)
+
+    if not video_id:
+        raise ValueError(
+            "올바른 YouTube URL을 입력하세요."
+        )
+
+    source_details = get_video_details(
+        video_id,
+        api_key,
+    )
+
+    if not source_details:
+        raise ValueError(
+            "입력 영상 정보를 가져오지 못했습니다."
+        )
+
+    source_data = prepare_source_data(
+        video_id=video_id,
+        source_details=source_details,
+        manual_transcript=manual_transcript,
+        uploaded_subtitle=uploaded_subtitle,
+    )
+
+    tfidf_result = analyze_tfidf(
+        source_data["text"],
+        sentence_count=sentence_count,
+    )
+
+    st.session_state.source_details = (
+        source_details
+    )
+
+    st.session_state.source_text = (
+        source_data["text"]
+    )
+
+    st.session_state.source_label = (
+        source_data["label"]
+    )
+
+    st.session_state.tfidf_result = (
+        tfidf_result
+    )
+
+    return (
+        video_id,
+        source_details,
+        tfidf_result,
+    )
+
+
+# =========================================================
+# 13. 화면 구성
 # =========================================================
 
 st.title(
-    "🎬 YouTube TF-IDF 자막 분석 및 영상 추천"
+    "🎬 YouTube TF-IDF 분석 및 코사인 유사도 추천"
 )
 
 st.write(
-    "TF-IDF로 입력 영상의 자막을 요약하고 핵심 키워드를 "
-    "추출합니다. 추천은 YouTube 검색 관련성, 제목·키워드 "
-    "유사도, 인기도를 결합하여 계산합니다."
+    "TF-IDF 자막 분석과 코사인 유사도 추천을 "
+    "서로 다른 버튼과 결과 영역으로 분리했습니다."
 )
 
+with st.expander(
+    "📐 분석 구조 확인"
+):
+    st.markdown(
+        r"""
+### 1. TF-IDF 분석
+
+입력 영상의 자막을 문장 단위로 나누고 단어의
+TF-IDF 값을 계산합니다.
+
+\[
+TFIDF(t,d)=TF(t,d)\times IDF(t)
+\]
+
+TF-IDF 결과로 다음을 출력합니다.
+
+- 핵심 문장 요약
+- 핵심 단어 및 구
+- 문장별 TF-IDF 중요도
+- TF-IDF CSV
+
+### 2. 코사인 유사도 추천
+
+입력 영상의 제목·TF-IDF 요약·핵심 키워드와
+후보 영상의 제목·설명을 같은 TF-IDF 공간에 배치합니다.
+
+\[
+CosineSimilarity(A,B)
+=
+\frac{A\cdot B}
+{\|A\|\|B\|}
+\]
+
+추천 영상은 코사인 유사도 내림차순으로만 정렬합니다.
+조회수, 좋아요, 검색 순위는 추천 점수에 포함하지 않습니다.
+        """
+    )
+
 if st.sidebar.button(
-    "🗑️ 캐시 삭제",
+    "🗑️ 캐시 및 결과 초기화",
     use_container_width=True,
 ):
     st.cache_data.clear()
+    reset_analysis_results()
+
     st.sidebar.success(
-        "캐시를 삭제했습니다."
+        "캐시와 분석 결과를 초기화했습니다."
     )
 
 with st.sidebar:
@@ -1309,48 +1447,10 @@ with st.sidebar:
     )
 
     st.info(
-        "추천 모델 고정값\n\n"
-        "- YouTube 검색 관련성: 45%\n"
-        "- 제목·키워드 유사도: 45%\n"
-        "- 인기도: 10%\n"
-        "- 최소 제목 유사도: 0.08"
-    )
-
-with st.expander(
-    "📐 TF-IDF 및 추천 점수 계산 원리"
-):
-    st.markdown(
-        r"""
-### TF-IDF
-
-\[
-TFIDF(t,d)=TF(t,d)\times IDF(t)
-\]
-
-### 코사인 유사도
-
-\[
-CosineSimilarity(A,B)
-=
-\frac{A\cdot B}
-{\|A\|\|B\|}
-\]
-
-### 최종 추천 점수
-
-\[
-FinalScore
-=
-0.45\times SearchRelevance
-+
-0.45\times TitleSimilarity
-+
-0.10\times Popularity
-\]
-
-제목·핵심 키워드 TF-IDF 유사도가 0.08 미만인 영상은
-관련 영상으로 표시하지 않습니다.
-        """
+        "추천 정렬 기준\n\n"
+        "- TF-IDF 코사인 유사도만 사용\n"
+        "- 최소 유사도: 0.08\n"
+        "- 조회수·좋아요는 참고 정보"
     )
 
 api_key = get_api_key()
@@ -1370,53 +1470,59 @@ youtube_url = st.text_input(
 )
 
 custom_search_query = st.text_input(
-    "관련 영상 검색어 직접 입력(선택)",
+    "후보 영상 검색어(선택)",
     placeholder=(
         "예: 생성형 인공지능 교육 활용"
     ),
     help=(
-        "비워 두면 제목과 TF-IDF 핵심 "
-        "키워드로 자동 생성합니다."
+        "비워 두면 영상 제목과 TF-IDF "
+        "핵심 키워드로 자동 생성합니다."
     ),
 )
 
-st.subheader("자막 대체 입력")
+with st.expander(
+    "자막 자동 수집 실패 시 대체 입력"
+):
+    uploaded_subtitle = st.file_uploader(
+        "TXT, SRT 또는 VTT 자막 파일",
+        type=[
+            "txt",
+            "srt",
+            "vtt",
+        ],
+    )
 
-uploaded_subtitle = st.file_uploader(
-    "자동 자막 수집 실패 시 "
-    "TXT, SRT 또는 VTT 파일 업로드",
-    type=[
-        "txt",
-        "srt",
-        "vtt",
-    ],
-)
+    manual_transcript = st.text_area(
+        "또는 자막을 직접 붙여 넣으세요.",
+        height=150,
+    )
 
-manual_transcript = st.text_area(
-    "또는 자막을 직접 붙여 넣으세요.",
-    height=120,
-)
-
-button_column1, button_column2 = (
-    st.columns(2)
+button_column1, button_column2, button_column3 = (
+    st.columns(3)
 )
 
 with button_column1:
     diagnostic_button = st.button(
-        "🔍 입력 영상 자막 진단",
+        "🔍 자막 진단",
         use_container_width=True,
     )
 
 with button_column2:
-    analyze_button = st.button(
-        "📊 TF-IDF 분석 및 추천",
+    tfidf_button = st.button(
+        "📊 TF-IDF 자막 분석",
         type="primary",
+        use_container_width=True,
+    )
+
+with button_column3:
+    cosine_button = st.button(
+        "🎯 코사인 유사도 추천",
         use_container_width=True,
     )
 
 
 # =========================================================
-# 11. 자막 진단
+# 14. 자막 진단 실행
 # =========================================================
 
 if diagnostic_button:
@@ -1431,7 +1537,7 @@ if diagnostic_button:
 
     else:
         with st.spinner(
-            "입력 영상 자막을 확인하고 있습니다..."
+            "자막 상태를 확인하고 있습니다..."
         ):
             diagnostic_result = get_transcript(
                 diagnostic_video_id
@@ -1442,18 +1548,16 @@ if diagnostic_button:
                 "자막을 정상적으로 가져왔습니다."
             )
 
-            column1, column2, column3 = (
+            metric1, metric2, metric3 = (
                 st.columns(3)
             )
 
-            column1.metric(
+            metric1.metric(
                 "언어",
-                diagnostic_result[
-                    "language"
-                ],
+                diagnostic_result["language"],
             )
 
-            column2.metric(
+            metric2.metric(
                 "자막 유형",
                 (
                     "자동 생성"
@@ -1464,7 +1568,7 @@ if diagnostic_button:
                 ),
             )
 
-            column3.metric(
+            metric3.metric(
                 "번역 여부",
                 (
                     "번역"
@@ -1483,23 +1587,9 @@ if diagnostic_button:
                 height=250,
             )
 
-            if diagnostic_result[
-                "available_transcripts"
-            ]:
-                st.dataframe(
-                    pd.DataFrame(
-                        diagnostic_result[
-                            "available_transcripts"
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
         else:
             st.error(
-                "YouTube 자막 자동 수집에 실패했습니다. "
-                "영상에 자막이 없다는 뜻은 아닐 수 있습니다."
+                "YouTube 자막 자동 수집에 실패했습니다."
             )
 
             st.write(
@@ -1514,481 +1604,489 @@ if diagnostic_button:
                 or "오류 메시지가 없습니다."
             )
 
+            st.info(
+                "자막이 없는 것과는 다를 수 있습니다. "
+                "직접 입력 또는 자막 파일 업로드를 이용할 수 있습니다."
+            )
+
 
 # =========================================================
-# 12. 분석 및 추천
+# 15. TF-IDF 분석 버튼 실행
 # =========================================================
 
-if analyze_button:
+if tfidf_button:
     if not api_key:
         st.error(
             "YouTube Data API 키를 설정하세요."
         )
-        st.stop()
 
-    video_id = extract_video_id(youtube_url)
-
-    if not video_id:
-        st.error(
-            "올바른 YouTube URL을 입력하세요."
-        )
-        st.stop()
-
-    try:
-        with st.spinner(
-            "입력 영상 정보를 가져오는 중입니다..."
-        ):
-            source_details = get_video_details(
-                video_id,
-                api_key,
-            )
-
-        if not source_details:
-            st.error(
-                "영상 정보를 가져오지 못했습니다."
-            )
-            st.stop()
-
-        source_content = ""
-        source_data_label = ""
-
-        # 사용자가 제공한 자막을 우선합니다.
-        if manual_transcript.strip():
-            source_content = limit_text(
-                manual_transcript
-            )
-
-            source_data_label = (
-                "사용자가 직접 입력한 자막"
-            )
-
-        elif uploaded_subtitle is not None:
-            source_content = (
-                read_uploaded_subtitle(
-                    uploaded_subtitle
-                )
-            )
-
-            source_data_label = (
-                "업로드 자막: "
-                f"{uploaded_subtitle.name}"
-            )
-
-        else:
+    else:
+        try:
             with st.spinner(
-                "입력 영상 자막을 가져오는 중입니다..."
+                "영상 정보와 자막을 불러와 "
+                "TF-IDF를 분석하고 있습니다..."
             ):
-                transcript_result = (
-                    get_transcript(video_id)
-                )
-
-            if transcript_result["success"]:
-                source_content = (
-                    transcript_result["text"]
-                )
-
-                if transcript_result[
-                    "translated"
-                ]:
-                    source_data_label = (
-                        "YouTube 번역 자막"
-                    )
-
-                elif transcript_result[
-                    "generated"
-                ]:
-                    source_data_label = (
-                        "YouTube 자동 생성 자막"
-                    )
-
-                else:
-                    source_data_label = (
-                        "YouTube 수동 등록 자막"
-                    )
-
-            else:
-                fallback_text = " ".join(
-                    [
-                        source_details[
-                            "title"
-                        ],
-                        source_details[
-                            "title"
-                        ],
-                        source_details[
-                            "description"
-                        ],
-                    ]
-                )
-
-                if len(
-                    tokenize_mixed_text(
-                        fallback_text
-                    )
-                ) < 5:
-                    st.error(
-                        "자막 자동 수집에 실패했고 "
-                        "영상 설명도 부족합니다. "
-                        "자막을 직접 입력하거나 "
-                        "파일을 업로드하세요."
-                    )
-
-                    st.write(
-                        "자막 오류: "
-                        f"`{transcript_result['error_type']}`"
-                    )
-
-                    st.stop()
-
-                source_content = fallback_text
-                source_data_label = (
-                    "자막 수집 실패: 제목·설명 사용"
-                )
-
-                st.warning(
-                    "자막 자동 수집에 실패하여 "
-                    "제목과 설명으로 분석합니다."
-                )
-
-        with st.spinner(
-            "TF-IDF로 자막을 분석 중입니다..."
-        ):
-            summary_result = (
-                summarize_with_tfidf(
-                    source_content,
+                load_source_and_tfidf(
+                    youtube_url=youtube_url,
+                    api_key=api_key,
+                    manual_transcript=manual_transcript,
+                    uploaded_subtitle=uploaded_subtitle,
                     sentence_count=(
                         summary_sentence_count
                     ),
                 )
+
+            # 새로운 TF-IDF 분석을 했으므로
+            # 이전 추천 결과는 삭제합니다.
+            st.session_state.recommendation_df = None
+            st.session_state.orange_df = None
+            st.session_state.search_query_used = ""
+            st.session_state.candidate_lookup = {}
+
+            st.success(
+                "TF-IDF 자막 분석이 완료되었습니다."
             )
 
-        search_keywords = (
-            summary_result["keywords"][:10]
-        )
-
-        search_queries = build_search_queries(
-            source_details["title"],
-            search_keywords,
-        )
-
-        if custom_search_query.strip():
-            search_queries.insert(
-                0,
-                clean_text(
-                    custom_search_query
-                )[:100],
-            )
-
-            search_queries = list(
-                dict.fromkeys(search_queries)
-            )
-
-        if not search_queries:
+        except Exception as error:
             st.error(
-                "검색어를 생성하지 못했습니다."
-            )
-            st.stop()
-
-        with st.spinner(
-            "관련 영상 후보를 검색 중입니다..."
-        ):
-            search_result = (
-                search_candidate_videos(
-                    search_queries,
-                    api_key,
-                    candidate_count,
-                )
+                "TF-IDF 분석 중 오류가 발생했습니다."
             )
 
-        candidates = search_result[
-            "candidates"
-        ]
+            st.write(
+                f"오류 유형: "
+                f"`{type(error).__name__}`"
+            )
 
-        search_log = search_result[
-            "search_log"
-        ]
+            st.write(
+                f"오류 내용: {error}"
+            )
 
-        candidates = [
-            candidate
-            for candidate in candidates
-            if candidate["video_id"]
-            != video_id
-        ]
-
-        with st.expander(
-            "🔎 후보 영상 검색 과정"
-        ):
-            st.write("사용된 검색어")
-
-            for index, query in enumerate(
-                search_queries[:2],
-                start=1,
+            with st.expander(
+                "개발자용 상세 오류"
             ):
-                st.write(
-                    f"{index}. `{query}`"
+                st.code(
+                    traceback.format_exc()
                 )
 
-            if search_log:
-                st.dataframe(
-                    pd.DataFrame(
-                        search_log
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
 
-            st.write(
-                "입력 영상 제외 후 후보 수: "
-                f"{len(candidates)}개"
+# =========================================================
+# 16. 코사인 유사도 추천 버튼 실행
+# =========================================================
+
+if cosine_button:
+    if not api_key:
+        st.error(
+            "YouTube Data API 키를 설정하세요."
+        )
+
+    else:
+        try:
+            # TF-IDF 분석을 아직 하지 않았다면
+            # 추천 실행 시 한 번 자동 분석합니다.
+            (
+                video_id,
+                source_details,
+                tfidf_result,
+            ) = load_source_and_tfidf(
+                youtube_url=youtube_url,
+                api_key=api_key,
+                manual_transcript=manual_transcript,
+                uploaded_subtitle=uploaded_subtitle,
+                sentence_count=(
+                    summary_sentence_count
+                ),
             )
 
-        if not candidates:
+            search_query = build_search_query(
+                source_title=(
+                    source_details["title"]
+                ),
+                keywords=(
+                    tfidf_result["keywords"]
+                ),
+                custom_query=(
+                    custom_search_query
+                ),
+            )
+
+            if not search_query:
+                raise ValueError(
+                    "후보 검색어를 만들지 못했습니다."
+                )
+
+            with st.spinner(
+                "후보 영상을 검색하고 코사인 "
+                "유사도를 계산하고 있습니다..."
+            ):
+                candidates = (
+                    search_candidate_videos(
+                        query=search_query,
+                        api_key=api_key,
+                        max_results=(
+                            candidate_count
+                        ),
+                    )
+                )
+
+            candidates = [
+                candidate
+                for candidate in candidates
+                if candidate["video_id"]
+                != video_id
+            ]
+
+            if not candidates:
+                raise ValueError(
+                    "입력 영상 이외의 후보 영상을 "
+                    "찾지 못했습니다."
+                )
+
+            (
+                recommendation_df,
+                orange_df,
+            ) = calculate_cosine_recommendations(
+                source_title=(
+                    source_details["title"]
+                ),
+                tfidf_result=tfidf_result,
+                candidates=candidates,
+            )
+
+            st.session_state.recommendation_df = (
+                recommendation_df
+            )
+
+            st.session_state.orange_df = (
+                orange_df
+            )
+
+            st.session_state.search_query_used = (
+                search_query
+            )
+
+            st.session_state.candidate_lookup = {
+                candidate["video_id"]: candidate
+                for candidate in candidates
+            }
+
+            if recommendation_df.empty:
+                st.warning(
+                    "최소 코사인 유사도 기준을 "
+                    "통과한 후보 영상이 없습니다."
+                )
+
+                st.info(
+                    "관련성이 거의 없는 영상을 "
+                    "강제로 추천하지 않았습니다. "
+                    "후보 영상 검색어를 짧고 "
+                    "명확하게 입력해 보세요."
+                )
+
+            else:
+                st.success(
+                    "코사인 유사도 추천이 완료되었습니다."
+                )
+
+        except Exception as error:
             st.error(
-                "입력 영상 이외의 후보 영상을 "
-                "찾지 못했습니다."
+                "코사인 유사도 추천 중 오류가 발생했습니다."
             )
-            st.stop()
 
-        with st.spinner(
-            "추천 점수를 계산 중입니다..."
-        ):
-            results_df, orange_df = (
-                calculate_recommendations(
-                    source_title=(
-                        source_details["title"]
-                    ),
-                    source_keywords=(
-                        summary_result[
-                            "keywords"
-                        ]
-                    ),
-                    candidates=candidates,
+            st.write(
+                f"오류 유형: "
+                f"`{type(error).__name__}`"
+            )
+
+            st.write(
+                f"오류 내용: {error}"
+            )
+
+            with st.expander(
+                "개발자용 상세 오류"
+            ):
+                st.code(
+                    traceback.format_exc()
                 )
-            )
 
-        if results_df.empty:
-            st.warning(
-                "제목·키워드 유사도 기준을 "
-                "통과한 관련 영상이 없습니다."
-            )
 
-            st.info(
-                "관련성이 거의 없는 영상을 "
-                "강제로 추천하지 않았습니다. "
-                "관련 영상 검색어를 더 짧고 "
-                "명확하게 입력해 보세요."
-            )
+# =========================================================
+# 17. 입력 영상 공통 정보 출력
+# =========================================================
 
-            st.write(
-                "적용된 최소 제목 유사도: "
-                f"`{MINIMUM_TITLE_SIMILARITY}`"
-            )
+if st.session_state.source_details is not None:
+    source_details = (
+        st.session_state.source_details
+    )
 
-            st.stop()
+    st.divider()
 
-        st.success(
-            "분석이 완료되었습니다."
+    st.subheader("입력 영상")
+
+    video_column, information_column = (
+        st.columns([1, 2])
+    )
+
+    with video_column:
+        st.video(
+            source_details["url"]
         )
 
-        st.subheader("1. 입력 영상")
-
-        video_column, info_column = (
-            st.columns([1, 2])
-        )
-
-        with video_column:
-            st.video(
-                source_details["url"]
-            )
-
-        with info_column:
-            st.markdown(
-                f"### {source_details['title']}"
-            )
-
-            st.write(
-                "채널: "
-                f"{source_details['channel_title']}"
-            )
-
-            st.write(
-                "분석 데이터: "
-                f"{source_data_label}"
-            )
-
-            st.write(
-                "조회수: "
-                f"{source_details['views']:,}"
-            )
-
-            st.write(
-                "좋아요: "
-                f"{source_details['likes']:,}"
-            )
-
-        st.subheader(
-            "2. TF-IDF 핵심 내용 요약"
+    with information_column:
+        st.markdown(
+            f"### {source_details['title']}"
         )
 
         st.write(
-            summary_result["summary"]
+            "채널: "
+            f"{source_details['channel_title']}"
         )
 
-        st.subheader(
-            "3. TF-IDF 핵심 키워드"
+        st.write(
+            "분석 데이터: "
+            f"{st.session_state.source_label}"
         )
 
+        st.write(
+            f"조회수: "
+            f"{source_details['views']:,}"
+        )
+
+        st.write(
+            f"좋아요: "
+            f"{source_details['likes']:,}"
+        )
+
+
+# =========================================================
+# 18. TF-IDF 분석 결과 출력
+# =========================================================
+
+if st.session_state.tfidf_result is not None:
+    tfidf_result = (
+        st.session_state.tfidf_result
+    )
+
+    st.divider()
+
+    st.header("📊 TF-IDF 자막 분석 결과")
+
+    st.subheader("핵심 내용 요약")
+
+    st.write(
+        tfidf_result["summary"]
+    )
+
+    st.subheader(
+        "핵심 키워드 및 TF-IDF 점수"
+    )
+
+    st.dataframe(
+        tfidf_result["keyword_scores"],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    with st.expander(
+        "문장별 TF-IDF 중요도"
+    ):
         st.dataframe(
-            summary_result[
-                "keyword_scores"
-            ],
+            tfidf_result["sentence_scores"],
             use_container_width=True,
             hide_index=True,
         )
 
-        with st.expander(
-            "문장별 TF-IDF 중요도"
-        ):
-            st.dataframe(
-                summary_result[
-                    "sentence_scores"
-                ],
-                use_container_width=True,
-                hide_index=True,
+    download_column1, download_column2 = (
+        st.columns(2)
+    )
+
+    with download_column1:
+        st.download_button(
+            "TF-IDF 키워드 CSV",
+            data=dataframe_to_csv_bytes(
+                tfidf_result[
+                    "keyword_scores"
+                ]
+            ),
+            file_name=(
+                "tfidf_keyword_results.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with download_column2:
+        st.download_button(
+            "TF-IDF 문장 벡터 CSV",
+            data=dataframe_to_csv_bytes(
+                tfidf_result[
+                    "sentence_features"
+                ]
+            ),
+            file_name=(
+                "tfidf_sentence_features.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+# =========================================================
+# 19. 코사인 유사도 결과 출력
+# =========================================================
+
+recommendation_df = (
+    st.session_state.recommendation_df
+)
+
+if (
+    recommendation_df is not None
+    and not recommendation_df.empty
+):
+    st.divider()
+
+    st.header(
+        "🎯 코사인 유사도 추천 결과"
+    )
+
+    st.write(
+        "후보 영상 검색어: "
+        f"`{st.session_state.search_query_used}`"
+    )
+
+    st.caption(
+        "추천 순서는 TF-IDF 벡터 사이의 "
+        "코사인 유사도만으로 결정됩니다."
+    )
+
+    shown_df = recommendation_df.head(
+        recommendation_count
+    )
+
+    for rank, (_, row) in enumerate(
+        shown_df.iterrows(),
+        start=1,
+    ):
+        st.markdown("---")
+
+        image_column, result_column = (
+            st.columns([1, 3])
+        )
+
+        with image_column:
+            if row["thumbnail"]:
+                st.image(
+                    row["thumbnail"],
+                    use_container_width=True,
+                )
+
+        with result_column:
+            st.markdown(
+                f"### {rank}. "
+                f"[{row['title']}]"
+                f"({row['url']})"
             )
 
-        st.subheader(
-            "4. 관련 영상 추천"
-        )
-
-        shown_df = results_df.head(
-            recommendation_count
-        )
-
-        for index, row in shown_df.iterrows():
-            st.markdown("---")
-
-            image_column, result_column = (
-                st.columns([1, 3])
+            st.write(
+                "채널: "
+                f"{row['channel_title']}"
             )
 
-            with image_column:
-                if row["thumbnail"]:
-                    st.image(
-                        row["thumbnail"],
-                        use_container_width=True,
-                    )
+            st.metric(
+                "코사인 유사도",
+                (
+                    f"{row['cosine_similarity']:.4f}"
+                ),
+            )
 
-            with result_column:
-                st.markdown(
-                    f"### {index + 1}. "
-                    f"[{row['title']}]"
-                    f"({row['url']})"
-                )
+            st.write(
+                f"조회수: "
+                f"{int(row['views']):,} | "
+                f"좋아요: "
+                f"{int(row['likes']):,}"
+            )
 
-                st.write(
-                    "채널: "
-                    f"{row['channel_title']}"
-                )
+    st.subheader(
+        "추천 영상별 코사인 유사도"
+    )
 
-                metric1, metric2, metric3 = (
-                    st.columns(3)
-                )
+    chart_df = shown_df[
+        [
+            "title",
+            "cosine_similarity",
+        ]
+    ].set_index("title")
 
-                metric1.metric(
-                    "제목·키워드 유사도",
-                    (
-                        f"{row['title_similarity']:.3f}"
-                    ),
-                )
+    st.bar_chart(chart_df)
 
-                metric2.metric(
-                    "검색 관련성",
-                    (
-                        f"{row['search_relevance_score']:.3f}"
-                    ),
-                )
+    st.subheader(
+        "추천 1위 영상과의 TF-IDF 비교"
+    )
 
-                metric3.metric(
-                    "최종 점수",
-                    (
-                        f"{row['final_score']:.3f}"
-                    ),
-                )
+    first_row = shown_df.iloc[0]
 
-                st.write(
-                    "YouTube 검색 순위: "
-                    f"{int(row['search_rank'])}위 | "
-                    "조회수: "
-                    f"{int(row['views']):,} | "
-                    "좋아요: "
-                    f"{int(row['likes']):,}"
-                )
+    first_candidate = (
+        st.session_state.candidate_lookup[
+            first_row["video_id"]
+        ]
+    )
 
-        st.subheader(
-            "5. 추천 결과 비교"
-        )
-
-        chart_df = shown_df[
-            [
-                "title",
-                "title_similarity",
-                "search_relevance_score",
-                "final_score",
+    pair_tfidf_df = create_pair_tfidf_table(
+        source_title=(
+            st.session_state.source_details[
+                "title"
             ]
-        ].set_index("title")
+        ),
+        tfidf_result=(
+            st.session_state.tfidf_result
+        ),
+        candidate=first_candidate,
+    )
 
-        st.bar_chart(chart_df)
+    st.dataframe(
+        pair_tfidf_df,
+        use_container_width=True,
+        hide_index=True,
+    )
 
-        st.subheader(
-            "6. CSV 다운로드"
+    download_column1, download_column2, download_column3 = (
+        st.columns(3)
+    )
+
+    with download_column1:
+        st.download_button(
+            "코사인 추천 결과 CSV",
+            data=dataframe_to_csv_bytes(
+                recommendation_df
+            ),
+            file_name=(
+                "cosine_recommendations.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
         )
 
-        column1, column2 = st.columns(2)
-
-        with column1:
-            st.download_button(
-                "추천 결과 CSV",
-                data=dataframe_to_csv_bytes(
-                    results_df
-                ),
-                file_name=(
-                    "recommendation_results.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        with column2:
-            st.download_button(
-                "Orange3 TF-IDF CSV",
-                data=dataframe_to_csv_bytes(
-                    orange_df
-                ),
-                file_name=(
-                    "orange_tfidf_features.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-    except Exception as error:
-        st.error(
-            "분석 중 오류가 발생했습니다."
+    with download_column2:
+        st.download_button(
+            "Orange3 후보 TF-IDF CSV",
+            data=dataframe_to_csv_bytes(
+                st.session_state.orange_df
+            ),
+            file_name=(
+                "orange_candidate_tfidf.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
         )
 
-        st.write(
-            "오류 유형: "
-            f"`{type(error).__name__}`"
+    with download_column3:
+        st.download_button(
+            "추천 1위 TF-IDF 비교 CSV",
+            data=dataframe_to_csv_bytes(
+                pair_tfidf_df
+            ),
+            file_name=(
+                "top_recommendation_tfidf.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
         )
-
-        st.write(
-            f"오류 내용: {error}"
-        )
-
-        with st.expander(
-            "개발자용 상세 오류"
-        ):
-            st.code(
-                traceback.format_exc()
-            )
