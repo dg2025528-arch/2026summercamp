@@ -1960,7 +1960,7 @@ if recommendation_result is not None:
     st.divider()
 
     st.header(
-        "🎯 상대 코사인 유사도 추천"
+        "🎯 코사인 유사도 추천"
     )
 
     st.write(
