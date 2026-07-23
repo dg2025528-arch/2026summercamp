@@ -893,7 +893,8 @@ def dataframe_to_csv_bytes(dataframe):
 # =========================================================
 
 st.title("🎬 YouTube TF-IDF 자막 분석 및 관련 영상 추천")
-    if st.sidebar.button(
+
+if st.sidebar.button(
     "🗑️ 캐시 삭제",
     use_container_width=True,
 ):
