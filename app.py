@@ -988,11 +988,145 @@ youtube_url = st.text_input(
     placeholder="https://www.youtube.com/watch?v=...",
 )
 
-analyze_button = st.button(
-    "TF-IDF 분석 및 추천 실행",
-    type="primary",
-    use_container_width=True,
-)
+button_column1, button_column2 = st.columns(2)
+
+with button_column1:
+    diagnostic_button = st.button(
+        "🔍 자막 연결 상태 진단",
+        use_container_width=True,
+    )
+
+with button_column2:
+    analyze_button = st.button(
+        "📊 TF-IDF 분석 및 추천 실행",
+        type="primary",
+        use_container_width=True,
+    )
+
+
+# =========================================================
+# 자막 연결 상태 진단
+# =========================================================
+
+if diagnostic_button:
+    if not youtube_url.strip():
+        st.error("먼저 YouTube 영상 URL을 입력하세요.")
+
+    else:
+        diagnostic_video_id = extract_video_id(youtube_url)
+
+        if not diagnostic_video_id:
+            st.error("올바른 YouTube 영상 URL이 아닙니다.")
+
+        else:
+            with st.spinner(
+                "YouTube 자막 연결 상태를 확인하는 중입니다..."
+            ):
+                diagnostic_result = get_transcript(
+                    diagnostic_video_id
+                )
+
+            if diagnostic_result["success"]:
+                st.success("자막을 정상적으로 가져왔습니다.")
+
+                information_column1, information_column2, information_column3 = (
+                    st.columns(3)
+                )
+
+                with information_column1:
+                    st.metric(
+                        "자막 언어",
+                        diagnostic_result.get(
+                            "language",
+                            "unknown",
+                        ),
+                    )
+
+                with information_column2:
+                    st.metric(
+                        "자막 유형",
+                        (
+                            "자동 생성"
+                            if diagnostic_result.get(
+                                "generated",
+                                False,
+                            )
+                            else "수동 등록"
+                        ),
+                    )
+
+                with information_column3:
+                    st.metric(
+                        "번역 여부",
+                        (
+                            "번역 자막"
+                            if diagnostic_result.get(
+                                "translated",
+                                False,
+                            )
+                            else "원본 자막"
+                        ),
+                    )
+
+                transcript_text = diagnostic_result.get(
+                    "text",
+                    "",
+                )
+
+                st.write(
+                    f"가져온 자막 길이: "
+                    f"{len(transcript_text):,}자"
+                )
+
+                st.text_area(
+                    "가져온 자막 미리보기",
+                    transcript_text[:2000],
+                    height=250,
+                )
+
+            else:
+                st.error("자막을 가져오지 못했습니다.")
+
+                error_type = diagnostic_result.get(
+                    "error_type",
+                    "UnknownError",
+                )
+
+                error_message = diagnostic_result.get(
+                    "error_message",
+                    "정확한 오류 정보를 확인하지 못했습니다.",
+                )
+
+                st.write(f"오류 유형: `{error_type}`")
+                st.write(f"오류 설명: {error_message}")
+
+                if error_type in {
+                    "IpBlocked",
+                    "RequestBlocked",
+                }:
+                    st.warning(
+                        "영상에 자막이 있어도 YouTube가 "
+                        "Streamlit Cloud 서버의 요청을 차단한 "
+                        "상태일 수 있습니다."
+                    )
+
+                elif error_type == "TranscriptsDisabled":
+                    st.warning(
+                        "영상 소유자가 외부 자막 접근을 "
+                        "비활성화했을 가능성이 있습니다."
+                    )
+
+                elif error_type == "AgeRestricted":
+                    st.warning(
+                        "연령 제한 영상은 로그인하지 않은 "
+                        "서버에서 자막을 가져오기 어렵습니다."
+                    )
+
+                else:
+                    st.info(
+                        "다른 공개 영상으로 시험하거나 캐시를 "
+                        "삭제한 뒤 다시 시도해 보세요."
+                    )
 
 if analyze_button:
     if not youtube_url.strip():
