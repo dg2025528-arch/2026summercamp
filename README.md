@@ -25,23 +25,7 @@
 - 데이터 정규화
 - 데이터 시각화
 - 군집 분석
-
----
-
-## ✨ 주요 기능
-
-- YouTube URL에서 영상 ID 추출
-- 한국어 및 영어 자막 수집
-- 자막 텍스트 전처리
-- TF-IDF 기반 핵심 문장 추출
-- 핵심 키워드 추출
-- YouTube Data API를 이용한 관련 영상 검색
-- 입력 영상과 후보 영상의 코사인 유사도 계산
-- 일평균 조회수와 좋아요 수를 반영한 추천
-- 추천 결과 그래프 표시
-- 추천 결과 CSV 다운로드
-- Orange3 군집 분석용 TF-IDF CSV 다운로드
-
+- 
 ---
 
 ## ⚙️ 작동 원리
@@ -194,154 +178,6 @@ youtube-summary-recommender/
 
 ---
 
-## 🔑 YouTube Data API 키 발급
-
-영상 검색, 제목, 설명, 조회수, 좋아요 수를 가져오려면 YouTube Data API 키가 필요합니다.
-
-1. [Google Cloud Console](https://console.cloud.google.com/)에 접속합니다.
-2. Google 계정으로 로그인합니다.
-3. 새 프로젝트를 생성합니다.
-4. `API 및 서비스` 메뉴로 이동합니다.
-5. `라이브러리`를 선택합니다.
-6. `YouTube Data API v3`를 검색합니다.
-7. API를 활성화합니다.
-8. `사용자 인증 정보`에서 API 키를 생성합니다.
-9. 필요하면 API 키 사용 제한을 설정합니다.
-
-> API 키를 `app.py` 또는 README에 직접 입력하지 마세요.
-
----
-
-## 🚀 Streamlit Community Cloud 배포
-
-### 1. GitHub 저장소 생성
-
-GitHub에서 새 저장소를 만든 뒤 다음 파일을 업로드합니다.
-
-```text
-app.py
-requirements.txt
-README.md
-.gitignore
-```
-
-### 2. Streamlit Community Cloud 접속
-
-[Streamlit Community Cloud](https://share.streamlit.io/)에 접속하여 GitHub 계정으로 로그인합니다.
-
-### 3. 앱 생성
-
-다음 항목을 설정합니다.
-
-- Repository: 프로젝트 GitHub 저장소
-- Branch: `main`
-- Main file path: `app.py`
-
-### 4. API 키 등록
-
-Streamlit 앱 설정의 `Secrets`에 다음 내용을 입력합니다.
-
-```toml
-YOUTUBE_API_KEY = "본인의_실제_API_키"
-```
-
-API 키는 GitHub에 올리지 않고 Streamlit Secrets에만 저장합니다.
-
-### 5. 배포
-
-`Deploy` 버튼을 누르면 필요한 패키지가 자동으로 설치되고 웹앱이 실행됩니다.
-
----
-
-## 💻 로컬 실행 방법
-
-### 1. 저장소 복제
-
-```bash
-git clone https://github.com/본인아이디/저장소이름.git
-cd 저장소이름
-```
-
-### 2. 가상환경 생성
-
-Windows:
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-macOS 또는 Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. 패키지 설치
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. API 키 파일 생성
-
-프로젝트 폴더 안에 다음 구조로 파일을 만듭니다.
-
-```text
-.streamlit/
-└── secrets.toml
-```
-
-`secrets.toml`에 API 키를 작성합니다.
-
-```toml
-YOUTUBE_API_KEY = "본인의_실제_API_키"
-```
-
-### 5. 앱 실행
-
-```bash
-streamlit run app.py
-```
-
----
-
-## 📦 requirements.txt
-
-```txt
-streamlit>=1.36,<2.0
-pandas>=2.2,<3.0
-numpy>=1.26,<3.0
-scikit-learn>=1.5,<2.0
-google-api-python-client>=2.137,<3.0
-youtube-transcript-api>=1.0,<2.0
-```
-
----
-
-## 🔒 .gitignore
-
-```gitignore
-.streamlit/secrets.toml
-.env
-.venv/
-venv/
-__pycache__/
-*.pyc
-```
-
-`.gitignore`는 API 키가 저장된 파일과 실행 과정에서 생성되는 불필요한 파일이 GitHub에 업로드되지 않도록 합니다.
-
----
-
-## 📊 Orange3 분석 방법
-
-웹앱에서 다음 파일을 다운로드할 수 있습니다.
-
-- `youtube_recommendations.csv`
-- `orange_tfidf_features.csv`
-
 ### 추천 결과 CSV
 
 다음과 같은 정보를 포함합니다.
@@ -381,7 +217,7 @@ File
 
 ---
 
-## 🧪 평가 방법
+## 평가 방법
 
 다음 세 추천 방식을 비교할 수 있습니다.
 
@@ -436,5 +272,4 @@ File
 ## 👨‍💻 제작
 
 - 학교: 당곡고등학교
-- 제작자: 이름 입력
-- 프로젝트 유형: 정보·인공지능·데이터 분석 프로젝트
+- 제작자: 홍의찬
