@@ -25,7 +25,7 @@
 - 데이터 정규화
 - 데이터 시각화
 - 군집 분석
-- 
+
 ---
 
 ## ⚙️ 작동 원리
@@ -115,7 +115,7 @@ Score
 ## 🛠️ 사용 기술
 
 | 구분 | 사용 기술 |
-|---|---|
+
 | 개발 언어 | Python |
 | 웹 프레임워크 | Streamlit |
 | 데이터 처리 | Pandas, NumPy |
@@ -166,28 +166,6 @@ youtube-summary-recommender/
 ### TF-IDF 특징 CSV
 
 후보 영상별 TF-IDF 특징값을 포함합니다. 내용 기반 군집 분석에 활용할 수 있습니다.
-
-### 권장 Orange3 워크플로
-
-```text
-File
-→ Select Columns
-→ Normalize
-→ Distances
-→ Hierarchical Clustering
-→ MDS 또는 t-SNE
-→ Scatter Plot
-```
-
-`Select Columns`에서는 다음과 같이 설정하는 것이 좋습니다.
-
-- `tfidf_`로 시작하는 열: Feature
-- 제목, 채널명, URL: Meta
-- 코사인 유사도와 추천 점수: Feature 또는 Meta
-
-이를 통해 비슷한 내용을 가진 영상들이 가까운 위치에 배치되는지 확인할 수 있습니다.
-
----
 
 ## 평가 방법
 
