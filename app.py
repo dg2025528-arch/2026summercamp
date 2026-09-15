@@ -12,7 +12,11 @@ from sklearn.feature_extraction.text import (
     ENGLISH_STOP_WORDS,
     TfidfVectorizer,
 )
-from sklearn.metrics.pairwise import cosine_similarity
+
+from sklearn.metrics.pairwise import (
+    cosine_similarity,
+    euclidean_distances,
+)
 from youtube_transcript_api import YouTubeTranscriptApi
 
 
