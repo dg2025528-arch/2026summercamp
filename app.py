@@ -998,6 +998,68 @@ def search_candidates(
 # =========================================================
 # 10. 코사인 유사도와 상대 점수
 # =========================================================
+def calculate_jaccard_similarity(
+    source_text,
+    candidate_texts,
+):
+    """
+    토큰 집합을 기준으로 자카드 유사도를 계산합니다.
+
+    J(A, B) = |A ∩ B| / |A ∪ B|
+    """
+
+    source_tokens = set(
+        tokenize_mixed_text(source_text)
+    )
+
+    similarities = []
+
+    for candidate_text in candidate_texts:
+        candidate_tokens = set(
+            tokenize_mixed_text(candidate_text)
+        )
+
+        union_tokens = (
+            source_tokens | candidate_tokens
+        )
+
+        if not union_tokens:
+            similarity = 0.0
+        else:
+            intersection_tokens = (
+                source_tokens & candidate_tokens
+            )
+
+            similarity = (
+                len(intersection_tokens)
+                / len(union_tokens)
+            )
+
+        similarities.append(
+            float(similarity)
+        )
+
+    return np.asarray(
+        similarities,
+        dtype=float,
+    )
+
+
+def convert_distance_to_similarity(
+    distances,
+):
+    """
+    유클리드 거리를 0~1 범위의 유사도로 변환합니다.
+
+    similarity = 1 / (1 + distance)
+    """
+
+    distances = np.asarray(
+        distances,
+        dtype=float,
+    )
+
+    return 1.0 / (1.0 + distances)
 
 def calculate_relative_recommendations(
     source_details,
