@@ -25,7 +25,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 # =========================================================
 
 st.set_page_config(
-    page_title="YouTube TF-IDF 및 코사인 유사도 분석",
+    page_title="YouTube TF-IDF 및 유사도 분석",
     page_icon="🎬",
     layout="wide",
 )
@@ -41,6 +41,14 @@ RELATIVE_MINIMUM_SIMILARITY = 0.30
 
 # 최고 유사도가 이보다 낮으면 품질 경고를 표시합니다.
 LOW_QUALITY_WARNING = 0.03
+
+# 유사도 방식 정의
+SIMILARITY_METHODS = {
+    "cosine": "코사인 유사도",
+    "euclidean": "유클리드 유사도",
+    "jaccard": "자카드 유사도",
+    "combined": "통합 유사도 (평균 33%씩)",
+}
 
 
 # =========================================================
@@ -996,8 +1004,9 @@ def search_candidates(
 
 
 # =========================================================
-# 10. 코사인 유사도와 상대 점수
+# 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
+
 def calculate_jaccard_similarity(
     source_text,
     candidate_texts,
@@ -1006,6 +1015,11 @@ def calculate_jaccard_similarity(
     토큰 집합을 기준으로 자카드 유사도를 계산합니다.
 
     J(A, B) = |A ∩ B| / |A ∪ B|
+
+    - 단어의 '존재 여부'만 고려하며, 빈도나 중요도(TF-IDF)는
+      반영하지 않습니다.
+    - 두 텍스트가 공통으로 사용하는 어휘의 비율을 의미하며
+      0(전혀 겹치지 않음) ~ 1(완전히 동일한 단어 집합) 범위를 가집니다.
     """
 
     source_tokens = set(
@@ -1052,6 +1066,15 @@ def convert_distance_to_similarity(
     유클리드 거리를 0~1 범위의 유사도로 변환합니다.
 
     similarity = 1 / (1 + distance)
+
+    - 유클리드 거리는 TF-IDF 벡터 공간에서 두 문서 사이의
+      '직선 거리'를 의미합니다. 거리가 가까울수록(0에 가까울수록)
+      두 문서가 유사하다고 볼 수 있습니다.
+    - 코사인 유사도와 달리 벡터의 '방향'뿐 아니라 '크기(길이)'도
+      함께 반영되므로, 문서 길이 차이에 더 민감합니다.
+    - 거리값을 그대로 사용하면 값이 작을수록 유사한 것이라 직관과
+      반대이므로, 위 공식으로 변환하여 값이 클수록(1에 가까울수록)
+      유사하도록 만듭니다.
     """
 
     distances = np.asarray(
@@ -1060,6 +1083,7 @@ def convert_distance_to_similarity(
     )
 
     return 1.0 / (1.0 + distances)
+
 
 def calculate_relative_recommendations(
     source_details,
@@ -1110,12 +1134,15 @@ def calculate_relative_recommendations(
 
     if matrix.shape[1] == 0:
         raise ValueError(
-            "코사인 유사도를 계산할 단어가 없습니다."
+            "유사도를 계산할 단어가 없습니다."
         )
 
     source_vector = matrix[0:1]
     candidate_vectors = matrix[1:]
 
+    # ---------------------------
+    # 1) 코사인 유사도
+    # ---------------------------
     cosine_values = cosine_similarity(
         source_vector,
         candidate_vectors,
@@ -1126,20 +1153,67 @@ def calculate_relative_recommendations(
             "코사인 유사도 결과가 비어 있습니다."
         )
 
-    maximum_similarity = float(
-        np.max(cosine_values)
+    # ---------------------------
+    # 2) 유클리드 유사도 (거리 -> 유사도 변환)
+    # ---------------------------
+    euclidean_distance_values = euclidean_distances(
+        source_vector,
+        candidate_vectors,
+    ).ravel()
+
+    euclidean_values = convert_distance_to_similarity(
+        euclidean_distance_values
     )
 
-    if maximum_similarity > 0:
-        relative_values = (
-            cosine_values
-            / maximum_similarity
-        )
-    else:
-        relative_values = np.zeros(
-            len(cosine_values),
-            dtype=float,
-        )
+    # ---------------------------
+    # 3) 자카드 유사도 (토큰 집합 기반)
+    # ---------------------------
+    jaccard_values = calculate_jaccard_similarity(
+        source_comparison_text,
+        candidate_texts,
+    )
+
+    # ---------------------------
+    # 4) 통합 유사도 (각 33%씩 평균)
+    # ---------------------------
+    combined_values = (
+        cosine_values
+        + euclidean_values
+        + jaccard_values
+    ) / 3.0
+
+    def build_relative(values):
+        maximum_value = float(np.max(values))
+
+        if maximum_value > 0:
+            relative = values / maximum_value
+        else:
+            relative = np.zeros(
+                len(values),
+                dtype=float,
+            )
+
+        return relative, maximum_value
+
+    (
+        cosine_relative,
+        cosine_maximum,
+    ) = build_relative(cosine_values)
+
+    (
+        euclidean_relative,
+        euclidean_maximum,
+    ) = build_relative(euclidean_values)
+
+    (
+        jaccard_relative,
+        jaccard_maximum,
+    ) = build_relative(jaccard_values)
+
+    (
+        combined_relative,
+        combined_maximum,
+    ) = build_relative(combined_values)
 
     rows = []
 
@@ -1151,61 +1225,124 @@ def calculate_relative_recommendations(
         row["cosine_similarity"] = float(
             cosine_values[index]
         )
-
-        row["relative_similarity"] = float(
-            relative_values[index]
+        row["cosine_relative"] = float(
+            cosine_relative[index]
+        )
+        row["cosine_relative_percent"] = float(
+            cosine_relative[index] * 100.0
         )
 
-        row["relative_percent"] = float(
-            relative_values[index] * 100.0
+        row["euclidean_similarity"] = float(
+            euclidean_values[index]
+        )
+        row["euclidean_relative"] = float(
+            euclidean_relative[index]
+        )
+        row["euclidean_relative_percent"] = float(
+            euclidean_relative[index] * 100.0
+        )
+
+        row["jaccard_similarity"] = float(
+            jaccard_values[index]
+        )
+        row["jaccard_relative"] = float(
+            jaccard_relative[index]
+        )
+        row["jaccard_relative_percent"] = float(
+            jaccard_relative[index] * 100.0
+        )
+
+        row["combined_similarity"] = float(
+            combined_values[index]
+        )
+        row["combined_relative"] = float(
+            combined_relative[index]
+        )
+        row["combined_relative_percent"] = float(
+            combined_relative[index] * 100.0
         )
 
         rows.append(row)
 
     all_results_df = pd.DataFrame(rows)
 
-    filtered_df = all_results_df[
-        (
-            all_results_df[
-                "cosine_similarity"
-            ]
-            >= ABSOLUTE_MINIMUM_SIMILARITY
-        )
-        &
-        (
-            all_results_df[
-                "relative_similarity"
-            ]
-            >= RELATIVE_MINIMUM_SIMILARITY
-        )
-    ].copy()
+    similarity_column_map = {
+        "cosine": (
+            "cosine_similarity",
+            "cosine_relative",
+            "cosine_relative_percent",
+        ),
+        "euclidean": (
+            "euclidean_similarity",
+            "euclidean_relative",
+            "euclidean_relative_percent",
+        ),
+        "jaccard": (
+            "jaccard_similarity",
+            "jaccard_relative",
+            "jaccard_relative_percent",
+        ),
+        "combined": (
+            "combined_similarity",
+            "combined_relative",
+            "combined_relative_percent",
+        ),
+    }
 
-    # 최고값이 0보다 크면 최고 후보는 반드시 포함합니다.
-    if (
-        filtered_df.empty
-        and maximum_similarity > 0
-    ):
-        best_index = all_results_df[
-            "cosine_similarity"
-        ].idxmax()
+    maximum_similarity_map = {
+        "cosine": cosine_maximum,
+        "euclidean": euclidean_maximum,
+        "jaccard": jaccard_maximum,
+        "combined": combined_maximum,
+    }
 
-        filtered_df = all_results_df.loc[
-            [best_index]
+    def filter_for_method(method_key):
+        (
+            absolute_column,
+            relative_column,
+            _,
+        ) = similarity_column_map[method_key]
+
+        filtered = all_results_df[
+            (
+                all_results_df[absolute_column]
+                >= ABSOLUTE_MINIMUM_SIMILARITY
+            )
+            & (
+                all_results_df[relative_column]
+                >= RELATIVE_MINIMUM_SIMILARITY
+            )
         ].copy()
 
-        filtered_df[
-            "best_candidate_only"
-        ] = True
+        maximum_value = maximum_similarity_map[
+            method_key
+        ]
 
-    else:
-        filtered_df[
-            "best_candidate_only"
-        ] = False
+        if filtered.empty and maximum_value > 0:
+            best_index = all_results_df[
+                absolute_column
+            ].idxmax()
 
-    filtered_df = filtered_df.sort_values(
-        by="cosine_similarity",
-        ascending=False,
-    ).reset_index(drop=True)
+            filtered = all_results_df.loc[
+                [best_index]
+            ].copy()
+
+            filtered["best_candidate_only"] = True
+
+        else:
+            filtered["best_candidate_only"] = False
+
+        filtered = filtered.sort_values(
+            by=absolute_column,
+            ascending=False,
+        ).reset_index(drop=True)
+
+        return filtered
+
+    recommendations_by_method = {
+        method_key: filter_for_method(method_key)
+        for method_key in SIMILARITY_METHODS.keys()
+    }
 
     feature_names = (
         vectorizer.get_feature_names_out()
@@ -1243,8 +1380,17 @@ def calculate_relative_recommendations(
         "likes",
         "daily_views",
         "cosine_similarity",
-        "relative_similarity",
-        "relative_percent",
+        "cosine_relative",
+        "cosine_relative_percent",
+        "euclidean_similarity",
+        "euclidean_relative",
+        "euclidean_relative_percent",
+        "jaccard_similarity",
+        "jaccard_relative",
+        "jaccard_relative_percent",
+        "combined_similarity",
+        "combined_relative",
+        "combined_relative_percent",
     ]
 
     metadata_df = all_results_df[
@@ -1269,10 +1415,17 @@ def calculate_relative_recommendations(
         ] = candidate
 
     return {
-        "recommendations": filtered_df,
+        "recommendations_by_method": (
+            recommendations_by_method
+        ),
+        "similarity_column_map": (
+            similarity_column_map
+        ),
+        "maximum_similarity_map": (
+            maximum_similarity_map
+        ),
         "all_results": all_results_df,
         "orange_df": orange_df,
-        "maximum_similarity": maximum_similarity,
         "candidate_lookup": candidate_lookup,
     }
 
@@ -1460,12 +1613,12 @@ def perform_tfidf_analysis(
 # =========================================================
 
 st.title(
-    "🎬 YouTube TF-IDF 분석 및 상대 코사인 추천"
+    "🎬 YouTube TF-IDF 분석 및 유사도 추천"
 )
 
 st.write(
-    "TF-IDF 자막 분석과 코사인 유사도 추천을 "
-    "서로 분리하여 실행합니다."
+    "TF-IDF 자막 분석과 코사인·유클리드·자카드·통합 "
+    "유사도 추천을 서로 분리하여 실행합니다."
 )
 
 with st.expander(
@@ -1482,7 +1635,9 @@ TFIDF(t,d)=TF(t,d)\times IDF(t)
 입력 영상의 자막에서 핵심 문장과 핵심 키워드를
 추출합니다.
 
-### 원본 코사인 유사도
+---
+
+### 1) 코사인 유사도 (Cosine Similarity)
 
 \[
 CosineSimilarity(A,B)
@@ -1491,17 +1646,83 @@ CosineSimilarity(A,B)
 {\|A\|\|B\|}
 \]
 
-### 상대 유사도
+두 TF-IDF 벡터가 이루는 각도를 기준으로 유사도를 측정합니다.
+벡터의 **방향**만 비교하기 때문에 문서 길이 차이에
+상대적으로 덜 민감합니다. 값은 0(전혀 다름)~1(완전히 같은 방향)
+사이입니다.
+
+---
+
+### 2) 유클리드 유사도 (Euclidean Similarity)
+
+먼저 두 벡터 사이의 유클리드 거리를 구합니다.
+
+\[
+EuclideanDistance(A,B)
+=
+\sqrt{\sum_i (A_i - B_i)^2}
+\]
+
+거리는 값이 작을수록 유사하다는 의미이므로,
+직관적으로 이해하기 쉽도록 아래 공식으로
+0~1 사이의 유사도로 변환합니다.
+
+\[
+EuclideanSimilarity(A,B)
+=
+\frac{1}{1+EuclideanDistance(A,B)}
+\]
+
+벡터의 **방향뿐 아니라 크기(길이)**까지 반영하므로,
+문서의 길이나 단어 빈도 차이에 코사인 유사도보다
+더 민감하게 반응합니다.
+
+---
+
+### 3) 자카드 유사도 (Jaccard Similarity)
+
+\[
+JaccardSimilarity(A,B)
+=
+\frac{|A \cap B|}{|A \cup B|}
+\]
+
+TF-IDF 점수를 사용하지 않고, 단어(토큰)의 **존재 여부**만
+집합으로 비교합니다. 즉 "같은 단어를 얼마나 공유하는가"를
+직접적으로 나타내며, 단어 빈도나 중요도는 반영하지 않습니다.
+
+---
+
+### 4) 통합 유사도 (Combined Similarity)
+
+\[
+CombinedSimilarity
+=
+\frac{1}{3}\Big(
+CosineSimilarity
++EuclideanSimilarity
++JaccardSimilarity
+\Big)
+\]
+
+세 가지 유사도를 각각 33.3%씩 동일한 비중으로 반영하여
+평균을 낸 값입니다. 한 가지 방식에 치우치지 않고
+방향·크기·어휘 중복도를 골고루 고려한 균형 잡힌 지표입니다.
+
+---
+
+### 상대 유사도 (공통)
 
 \[
 RelativeSimilarity_i
 =
-\frac{CosineSimilarity_i}
-{\max(CosineSimilarity)}
+\frac{Similarity_i}
+{\max(Similarity)}
 \]
 
-후보 중 가장 높은 영상이 100%가 되고,
-최고 후보의 30% 이상인 영상들을 상대적으로 추천합니다.
+선택한 유사도 방식을 기준으로, 후보 중 가장 높은 영상이
+100%가 되고, 최고 후보의 30% 이상인 영상들을 상대적으로
+추천합니다.
         """
     )
 
@@ -1539,6 +1760,15 @@ with st.sidebar:
         min_value=1,
         max_value=10,
         value=5,
+    )
+
+    st.divider()
+
+    selected_similarity_method = st.radio(
+        "유사도 계산 방식 선택",
+        options=list(SIMILARITY_METHODS.keys()),
+        format_func=lambda key: SIMILARITY_METHODS[key],
+        index=0,
     )
 
     st.info(
@@ -1607,7 +1837,7 @@ with button_column_2:
 
 with button_column_3:
     recommendation_button = st.button(
-        "🎯 상대 유사도 추천",
+        "🎯 유사도 추천",
         use_container_width=True,
     )
 
@@ -1690,622 +1920,4 @@ if tfidf_button:
     else:
         try:
             with st.spinner(
-                "TF-IDF 분석 중입니다..."
-            ):
-                perform_tfidf_analysis(
-                    youtube_url=(
-                        youtube_url
-                    ),
-                    api_key=api_key,
-                    manual_transcript=(
-                        manual_transcript
-                    ),
-                    uploaded_subtitle=(
-                        uploaded_subtitle
-                    ),
-                    sentence_count=(
-                        summary_sentence_count
-                    ),
-                )
-
-            st.session_state[
-                "recommendation_result"
-            ] = None
-
-            st.session_state[
-                "search_query"
-            ] = ""
-
-            st.success(
-                "TF-IDF 분석 완료"
-            )
-
-        except Exception as error:
-            st.error(
-                "TF-IDF 분석 실패"
-            )
-
-            st.write(
-                "오류 유형: "
-                + type(error).__name__
-            )
-
-            st.write(
-                "오류 내용: "
-                + str(error)
-            )
-
-            with st.expander(
-                "상세 오류"
-            ):
-                st.code(
-                    traceback.format_exc()
-                )
-
-
-# =========================================================
-# 15. 추천 버튼
-# =========================================================
-
-if recommendation_button:
-    if not api_key:
-        st.error(
-            "API 키를 먼저 설정하세요."
-        )
-
-    else:
-        try:
-            with st.spinner(
-                "입력 영상 분석 중입니다..."
-            ):
-                (
-                    source_video_id,
-                    source_details,
-                    tfidf_result,
-                ) = perform_tfidf_analysis(
-                    youtube_url=(
-                        youtube_url
-                    ),
-                    api_key=api_key,
-                    manual_transcript=(
-                        manual_transcript
-                    ),
-                    uploaded_subtitle=(
-                        uploaded_subtitle
-                    ),
-                    sentence_count=(
-                        summary_sentence_count
-                    ),
-                )
-
-            search_query = build_search_query(
-                video_title=(
-                    source_details["title"]
-                ),
-                keywords=(
-                    tfidf_result["keywords"]
-                ),
-                custom_query=(
-                    custom_search_query
-                ),
-            )
-
-            if not search_query:
-                raise ValueError(
-                    "후보 검색어를 만들지 못했습니다."
-                )
-
-            with st.spinner(
-                "후보 검색 및 유사도 계산 중입니다..."
-            ):
-                candidates = search_candidates(
-                    search_query=(
-                        search_query
-                    ),
-                    api_key=api_key,
-                    maximum_results=(
-                        candidate_count
-                    ),
-                )
-
-                candidates = [
-                    candidate
-                    for candidate in candidates
-                    if candidate["video_id"]
-                    != source_video_id
-                ]
-
-                recommendation_result = (
-                    calculate_relative_recommendations(
-                        source_details=(
-                            source_details
-                        ),
-                        tfidf_result=(
-                            tfidf_result
-                        ),
-                        candidates=(
-                            candidates
-                        ),
-                    )
-                )
-
-            st.session_state[
-                "recommendation_result"
-            ] = recommendation_result
-
-            st.session_state[
-                "search_query"
-            ] = search_query
-
-            st.success(
-                "상대 유사도 추천 완료"
-            )
-
-        except Exception as error:
-            st.error(
-                "추천 실행 실패"
-            )
-
-            st.write(
-                "오류 유형: "
-                + type(error).__name__
-            )
-
-            st.write(
-                "오류 내용: "
-                + str(error)
-            )
-
-            with st.expander(
-                "상세 오류"
-            ):
-                st.code(
-                    traceback.format_exc()
-                )
-
-
-# =========================================================
-# 16. 입력 영상 정보
-# =========================================================
-
-if (
-    st.session_state.source_details
-    is not None
-):
-    source_details = (
-        st.session_state.source_details
-    )
-
-    st.divider()
-
-    st.subheader("입력 영상")
-
-    video_column, info_column = (
-        st.columns([1, 2])
-    )
-
-    with video_column:
-        st.video(
-            source_details["url"]
-        )
-
-    with info_column:
-        st.markdown(
-            "### "
-            + source_details["title"]
-        )
-
-        st.write(
-            "채널: "
-            + source_details[
-                "channel_title"
-            ]
-        )
-
-        st.write(
-            "분석 데이터: "
-            + st.session_state[
-                "source_label"
-            ]
-        )
-
-        st.write(
-            "조회수: "
-            + format(
-                source_details["views"],
-                ",",
-            )
-        )
-
-        st.write(
-            "좋아요: "
-            + format(
-                source_details["likes"],
-                ",",
-            )
-        )
-
-
-# =========================================================
-# 17. TF-IDF 결과
-# =========================================================
-
-if (
-    st.session_state.tfidf_result
-    is not None
-):
-    tfidf_result = (
-        st.session_state.tfidf_result
-    )
-
-    st.divider()
-
-    st.header(
-        "📊 TF-IDF 분석 결과"
-    )
-
-    st.subheader(
-        "핵심 내용 요약"
-    )
-
-    st.write(
-        tfidf_result["summary"]
-    )
-
-    st.subheader(
-        "핵심 키워드"
-    )
-
-    st.dataframe(
-        tfidf_result["keyword_df"],
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    with st.expander(
-        "문장별 TF-IDF 점수"
-    ):
-        st.dataframe(
-            tfidf_result[
-                "sentence_score_df"
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    tfidf_download_1, tfidf_download_2 = (
-        st.columns(2)
-    )
-
-    with tfidf_download_1:
-        st.download_button(
-            "키워드 CSV",
-            data=to_csv_bytes(
-                tfidf_result[
-                    "keyword_df"
-                ]
-            ),
-            file_name=(
-                "tfidf_keywords.csv"
-            ),
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-    with tfidf_download_2:
-        st.download_button(
-            "문장 벡터 CSV",
-            data=to_csv_bytes(
-                tfidf_result[
-                    "sentence_feature_df"
-                ]
-            ),
-            file_name=(
-                "tfidf_sentence_vectors.csv"
-            ),
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-
-# =========================================================
-# 18. 추천 결과
-# =========================================================
-
-recommendation_result = (
-    st.session_state.recommendation_result
-)
-
-if recommendation_result is not None:
-    recommendations = (
-        recommendation_result[
-            "recommendations"
-        ]
-    )
-
-    st.divider()
-
-    st.header(
-        "🎯 코사인 유사도 추천"
-    )
-
-    st.write(
-        "사용한 검색어: `"
-        + st.session_state[
-            "search_query"
-        ]
-        + "`"
-    )
-
-    maximum_similarity = (
-        recommendation_result[
-            "maximum_similarity"
-        ]
-    )
-
-    summary_metric_1, summary_metric_2 = (
-        st.columns(2)
-    )
-
-    summary_metric_1.metric(
-        "최고 원본 코사인 유사도",
-        format(
-            maximum_similarity,
-            ".4f",
-        ),
-    )
-
-    summary_metric_2.metric(
-        "상대 추천 기준",
-        format(
-            RELATIVE_MINIMUM_SIMILARITY
-            * 100,
-            ".0f",
-        )
-        + "%",
-    )
-
-    if (
-        maximum_similarity
-        < LOW_QUALITY_WARNING
-    ):
-        st.warning(
-            "후보 전체의 원본 유사도가 낮습니다. "
-            "상대 점수는 후보들 사이의 순위이지, "
-            "절대적으로 관련성이 높다는 뜻은 아닙니다."
-        )
-
-    if recommendations.empty:
-        st.warning(
-            "코사인 유사도가 0보다 큰 "
-            "후보를 찾지 못했습니다."
-        )
-
-    else:
-        shown_recommendations = (
-            recommendations.head(
-                recommendation_count
-            )
-        )
-
-        for rank, row_tuple in enumerate(
-            shown_recommendations.itertuples(
-                index=False
-            ),
-            start=1,
-        ):
-            row = row_tuple._asdict()
-
-            st.markdown("---")
-
-            image_column, result_column = (
-                st.columns([1, 3])
-            )
-
-            with image_column:
-                if row["thumbnail"]:
-                    st.image(
-                        row["thumbnail"],
-                        use_container_width=True,
-                    )
-
-            with result_column:
-                st.markdown(
-                    "### "
-                    + str(rank)
-                    + ". ["
-                    + row["title"]
-                    + "]("
-                    + row["url"]
-                    + ")"
-                )
-
-                st.write(
-                    "채널: "
-                    + row["channel_title"]
-                )
-
-                score_column_1, score_column_2 = (
-                    st.columns(2)
-                )
-
-                score_column_1.metric(
-                    "원본 코사인 유사도",
-                    format(
-                        row[
-                            "cosine_similarity"
-                        ],
-                        ".4f",
-                    ),
-                )
-
-                score_column_2.metric(
-                    "상대 유사도",
-                    format(
-                        row[
-                            "relative_percent"
-                        ],
-                        ".1f",
-                    )
-                    + "%",
-                )
-
-                progress_value = float(
-                    row[
-                        "relative_similarity"
-                    ]
-                )
-
-                progress_value = max(
-                    0.0,
-                    min(
-                        progress_value,
-                        1.0,
-                    ),
-                )
-
-                st.progress(
-                    progress_value
-                )
-
-                st.write(
-                    "조회수: "
-                    + format(
-                        int(row["views"]),
-                        ",",
-                    )
-                    + " | 좋아요: "
-                    + format(
-                        int(row["likes"]),
-                        ",",
-                    )
-                )
-
-        st.subheader(
-            "상대 유사도 비교"
-        )
-
-        relative_chart = (
-            shown_recommendations[
-                [
-                    "title",
-                    "relative_similarity",
-                ]
-            ]
-            .set_index("title")
-        )
-
-        st.bar_chart(
-            relative_chart
-        )
-
-        st.subheader(
-            "원본 코사인 유사도 비교"
-        )
-
-        cosine_chart = (
-            shown_recommendations[
-                [
-                    "title",
-                    "cosine_similarity",
-                ]
-            ]
-            .set_index("title")
-        )
-
-        st.bar_chart(
-            cosine_chart
-        )
-
-        first_video_id = str(
-            shown_recommendations.iloc[
-                0
-            ]["video_id"]
-        )
-
-        candidate_lookup = (
-            recommendation_result[
-                "candidate_lookup"
-            ]
-        )
-
-        first_candidate = (
-            candidate_lookup[
-                first_video_id
-            ]
-        )
-
-        pair_tfidf_df = (
-            create_pair_tfidf_table(
-                source_details=(
-                    st.session_state[
-                        "source_details"
-                    ]
-                ),
-                tfidf_result=(
-                    st.session_state[
-                        "tfidf_result"
-                    ]
-                ),
-                candidate=(
-                    first_candidate
-                ),
-            )
-        )
-
-        st.subheader(
-            "추천 1위와 TF-IDF 비교"
-        )
-
-        st.dataframe(
-            pair_tfidf_df,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        download_1, download_2, download_3 = (
-            st.columns(3)
-        )
-
-        with download_1:
-            st.download_button(
-                "추천 결과 CSV",
-                data=to_csv_bytes(
-                    recommendations
-                ),
-                file_name=(
-                    "relative_recommendations.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        with download_2:
-            st.download_button(
-                "전체 후보 CSV",
-                data=to_csv_bytes(
-                    recommendation_result[
-                        "all_results"
-                    ]
-                ),
-                file_name=(
-                    "all_candidate_scores.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        with download_3:
-            st.download_button(
-                "Orange3 TF-IDF CSV",
-                data=to_csv_bytes(
-                    recommendation_result[
-                        "orange_df"
-                    ]
-                ),
-                file_name=(
-                    "orange_candidate_tfidf.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-            )
+                "TF-IDF 분석 중입
