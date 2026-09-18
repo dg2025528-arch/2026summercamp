@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from googleapiclient.discovery import build
+from groq import Groq
 from sklearn.feature_extraction.text import (
     ENGLISH_STOP_WORDS,
     TfidfVectorizer,
@@ -325,6 +326,19 @@ def get_api_key():
         pass
 
     return os.getenv("YOUTUBE_API_KEY", "")
+
+
+def get_groq_api_key():
+    try:
+        secret_key = st.secrets["GROQ_API_KEY"]
+
+        if secret_key:
+            return secret_key
+
+    except Exception:
+        pass
+
+    return os.getenv("GROQ_API_KEY", "")
 
 
 def get_youtube_client(api_key):
@@ -705,7 +719,7 @@ def analyze_tfidf(
         top_sentence_indices.tolist()
     )
 
-    summary = " ".join(
+    extractive_summary = " ".join(
         sentences[index]
         for index in ordered_summary_indices
     )
@@ -809,12 +823,127 @@ def analyze_tfidf(
     )
 
     return {
-        "summary": summary,
+        "extractive_summary": extractive_summary,
         "keywords": keywords,
         "keyword_df": keyword_df,
         "sentence_score_df": sentence_score_df,
         "sentence_feature_df": sentence_feature_df,
     }
+
+
+# =========================================================
+# 8-1. Groq 기반 자연어 요약
+# =========================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def generate_ai_summary(
+    video_title,
+    extractive_summary,
+    keywords,
+    groq_api_key,
+):
+    """
+    TF-IDF로 추출한 핵심 문장과 키워드를 Groq(LLM)에게 전달하여
+    자연스러운 문장으로 재구성한 요약을 생성합니다.
+
+    실패하거나 API 키가 없으면 success=False를 반환하며,
+    호출부에서 기존 추출 요약으로 폴백 처리합니다.
+    """
+
+    empty_result = {
+        "success": False,
+        "text": "",
+        "error_type": "",
+        "error_message": "",
+    }
+
+    if not groq_api_key:
+        result = empty_result.copy()
+        result["error_type"] = "NoApiKey"
+        result["error_message"] = (
+            "Groq API 키가 설정되지 않았습니다."
+        )
+        return result
+
+    if not extractive_summary.strip():
+        result = empty_result.copy()
+        result["error_type"] = "EmptyInput"
+        result["error_message"] = (
+            "요약할 원본 문장이 없습니다."
+        )
+        return result
+
+    try:
+        client = Groq(api_key=groq_api_key)
+
+        keyword_text = ", ".join(keywords[:15])
+
+        system_prompt = (
+            "너는 유튜브 영상 내용을 사람들에게 "
+            "친근하고 이해하기 쉽게 설명해주는 "
+            "어시스턴트야. 항상 자연스러운 "
+            "한국어 존댓말로 답변해."
+        )
+
+        user_prompt = (
+            "아래는 영상 제목과, 자막에서 자동으로 "
+            "추출한 핵심 문장들, 핵심 키워드야. "
+            "이 정보를 바탕으로 영상이 어떤 내용을 "
+            "다루는지 3~5문장 정도의 자연스러운 "
+            "설명글로 다시 써줘.\n\n"
+            "규칙:\n"
+            "- 추출된 문장을 그대로 복사하지 말고, "
+            "내용을 이해한 뒤 너의 말로 재구성해줘.\n"
+            "- 실제 영상에 없는 내용을 지어내지 마.\n"
+            "- 마크다운 기호(#, *, - 등)는 쓰지 마.\n\n"
+            "영상 제목: " + video_title + "\n\n"
+            "추출된 핵심 문장들:\n"
+            + extractive_summary + "\n\n"
+            "핵심 키워드: " + keyword_text
+        )
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
+
+        summary_text = clean_text(
+            response.choices[0].message.content
+        )
+
+        if not summary_text:
+            result = empty_result.copy()
+            result["error_type"] = "EmptyResponse"
+            result["error_message"] = (
+                "Groq 응답이 비어 있습니다."
+            )
+            return result
+
+        return {
+            "success": True,
+            "text": summary_text,
+            "error_type": "",
+            "error_message": "",
+        }
+
+    except Exception as error:
+        result = empty_result.copy()
+        result["error_type"] = type(error).__name__
+        result["error_message"] = (
+            str(error) or repr(error)
+        )
+        return result
 
 
 # =========================================================
@@ -1001,8 +1130,6 @@ def search_candidates(
         )
 
     return candidates
-
-
 # =========================================================
 # 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
