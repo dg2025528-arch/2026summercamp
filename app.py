@@ -1920,4 +1920,706 @@ if tfidf_button:
     else:
         try:
             with st.spinner(
-                "TF-IDF 분석 중입
+                "TF-IDF 분석 중입니다..."
+            ):
+                perform_tfidf_analysis(
+                    youtube_url=(
+                        youtube_url
+                    ),
+                    api_key=api_key,
+                    manual_transcript=(
+                        manual_transcript
+                    ),
+                    uploaded_subtitle=(
+                        uploaded_subtitle
+                    ),
+                    sentence_count=(
+                        summary_sentence_count
+                    ),
+                )
+
+            st.session_state[
+                "recommendation_result"
+            ] = None
+
+            st.session_state[
+                "search_query"
+            ] = ""
+
+            st.success(
+                "TF-IDF 분석 완료"
+            )
+
+        except Exception as error:
+            st.error(
+                "TF-IDF 분석 실패"
+            )
+
+            st.write(
+                "오류 유형: "
+                + type(error).__name__
+            )
+
+            st.write(
+                "오류 내용: "
+                + str(error)
+            )
+
+            with st.expander(
+                "상세 오류"
+            ):
+                st.code(
+                    traceback.format_exc()
+                )
+
+
+# =========================================================
+# 15. 추천 버튼
+# =========================================================
+
+if recommendation_button:
+    if not api_key:
+        st.error(
+            "API 키를 먼저 설정하세요."
+        )
+
+    else:
+        try:
+            with st.spinner(
+                "입력 영상 분석 중입니다..."
+            ):
+                (
+                    source_video_id,
+                    source_details,
+                    tfidf_result,
+                ) = perform_tfidf_analysis(
+                    youtube_url=(
+                        youtube_url
+                    ),
+                    api_key=api_key,
+                    manual_transcript=(
+                        manual_transcript
+                    ),
+                    uploaded_subtitle=(
+                        uploaded_subtitle
+                    ),
+                    sentence_count=(
+                        summary_sentence_count
+                    ),
+                )
+
+            search_query = build_search_query(
+                video_title=(
+                    source_details["title"]
+                ),
+                keywords=(
+                    tfidf_result["keywords"]
+                ),
+                custom_query=(
+                    custom_search_query
+                ),
+            )
+
+            if not search_query:
+                raise ValueError(
+                    "후보 검색어를 만들지 못했습니다."
+                )
+
+            with st.spinner(
+                "후보 검색 및 유사도 계산 중입니다..."
+            ):
+                candidates = search_candidates(
+                    search_query=(
+                        search_query
+                    ),
+                    api_key=api_key,
+                    maximum_results=(
+                        candidate_count
+                    ),
+                )
+
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if candidate["video_id"]
+                    != source_video_id
+                ]
+
+                recommendation_result = (
+                    calculate_relative_recommendations(
+                        source_details=(
+                            source_details
+                        ),
+                        tfidf_result=(
+                            tfidf_result
+                        ),
+                        candidates=(
+                            candidates
+                        ),
+                    )
+                )
+
+            st.session_state[
+                "recommendation_result"
+            ] = recommendation_result
+
+            st.session_state[
+                "search_query"
+            ] = search_query
+
+            st.success(
+                "유사도 추천 완료"
+            )
+
+        except Exception as error:
+            st.error(
+                "추천 실행 실패"
+            )
+
+            st.write(
+                "오류 유형: "
+                + type(error).__name__
+            )
+
+            st.write(
+                "오류 내용: "
+                + str(error)
+            )
+
+            with st.expander(
+                "상세 오류"
+            ):
+                st.code(
+                    traceback.format_exc()
+                )
+
+
+# =========================================================
+# 16. 입력 영상 정보
+# =========================================================
+
+if (
+    st.session_state.source_details
+    is not None
+):
+    source_details = (
+        st.session_state.source_details
+    )
+
+    st.divider()
+
+    st.subheader("입력 영상")
+
+    video_column, info_column = (
+        st.columns([1, 2])
+    )
+
+    with video_column:
+        st.video(
+            source_details["url"]
+        )
+
+    with info_column:
+        st.markdown(
+            "### "
+            + source_details["title"]
+        )
+
+        st.write(
+            "채널: "
+            + source_details[
+                "channel_title"
+            ]
+        )
+
+        st.write(
+            "분석 데이터: "
+            + st.session_state[
+                "source_label"
+            ]
+        )
+
+        st.write(
+            "조회수: "
+            + format(
+                source_details["views"],
+                ",",
+            )
+        )
+
+        st.write(
+            "좋아요: "
+            + format(
+                source_details["likes"],
+                ",",
+            )
+        )
+
+
+# =========================================================
+# 17. TF-IDF 결과
+# =========================================================
+
+if (
+    st.session_state.tfidf_result
+    is not None
+):
+    tfidf_result = (
+        st.session_state.tfidf_result
+    )
+
+    st.divider()
+
+    st.header(
+        "📊 TF-IDF 분석 결과"
+    )
+
+    st.subheader(
+        "핵심 내용 요약"
+    )
+
+    st.write(
+        tfidf_result["summary"]
+    )
+
+    st.subheader(
+        "핵심 키워드"
+    )
+
+    st.dataframe(
+        tfidf_result["keyword_df"],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    with st.expander(
+        "문장별 TF-IDF 점수"
+    ):
+        st.dataframe(
+            tfidf_result[
+                "sentence_score_df"
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    tfidf_download_1, tfidf_download_2 = (
+        st.columns(2)
+    )
+
+    with tfidf_download_1:
+        st.download_button(
+            "키워드 CSV",
+            data=to_csv_bytes(
+                tfidf_result[
+                    "keyword_df"
+                ]
+            ),
+            file_name=(
+                "tfidf_keywords.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with tfidf_download_2:
+        st.download_button(
+            "문장 벡터 CSV",
+            data=to_csv_bytes(
+                tfidf_result[
+                    "sentence_feature_df"
+                ]
+            ),
+            file_name=(
+                "tfidf_sentence_vectors.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+# =========================================================
+# 18. 추천 결과
+# =========================================================
+
+recommendation_result = (
+    st.session_state.recommendation_result
+)
+
+if recommendation_result is not None:
+    st.divider()
+
+    st.header(
+        "🎯 유사도 기반 추천"
+    )
+
+    st.write(
+        "사용한 검색어: `"
+        + st.session_state[
+            "search_query"
+        ]
+        + "`"
+    )
+
+    method_key = selected_similarity_method
+    method_label = SIMILARITY_METHODS[method_key]
+
+    similarity_column_map = (
+        recommendation_result[
+            "similarity_column_map"
+        ]
+    )
+
+    (
+        absolute_column,
+        relative_column,
+        relative_percent_column,
+    ) = similarity_column_map[method_key]
+
+    maximum_similarity = (
+        recommendation_result[
+            "maximum_similarity_map"
+        ][method_key]
+    )
+
+    recommendations = (
+        recommendation_result[
+            "recommendations_by_method"
+        ][method_key]
+    )
+
+    st.subheader(
+        "선택한 방식: " + method_label
+    )
+
+    summary_metric_1, summary_metric_2 = (
+        st.columns(2)
+    )
+
+    summary_metric_1.metric(
+        "최고 원본 유사도",
+        format(
+            maximum_similarity,
+            ".4f",
+        ),
+    )
+
+    summary_metric_2.metric(
+        "상대 추천 기준",
+        format(
+            RELATIVE_MINIMUM_SIMILARITY
+            * 100,
+            ".0f",
+        )
+        + "%",
+    )
+
+    if (
+        maximum_similarity
+        < LOW_QUALITY_WARNING
+    ):
+        st.warning(
+            "후보 전체의 원본 유사도가 낮습니다. "
+            "상대 점수는 후보들 사이의 순위이지, "
+            "절대적으로 관련성이 높다는 뜻은 아닙니다."
+        )
+
+    if recommendations.empty:
+        st.warning(
+            "유사도가 0보다 큰 "
+            "후보를 찾지 못했습니다."
+        )
+
+    else:
+        shown_recommendations = (
+            recommendations.head(
+                recommendation_count
+            )
+        )
+
+        for rank, row_tuple in enumerate(
+            shown_recommendations.itertuples(
+                index=False
+            ),
+            start=1,
+        ):
+            row = row_tuple._asdict()
+
+            st.markdown("---")
+
+            image_column, result_column = (
+                st.columns([1, 3])
+            )
+
+            with image_column:
+                if row["thumbnail"]:
+                    st.image(
+                        row["thumbnail"],
+                        use_container_width=True,
+                    )
+
+            with result_column:
+                st.markdown(
+                    "### "
+                    + str(rank)
+                    + ". ["
+                    + row["title"]
+                    + "]("
+                    + row["url"]
+                    + ")"
+                )
+
+                st.write(
+                    "채널: "
+                    + row["channel_title"]
+                )
+
+                score_column_1, score_column_2 = (
+                    st.columns(2)
+                )
+
+                score_column_1.metric(
+                    method_label + " (원본)",
+                    format(
+                        row[absolute_column],
+                        ".4f",
+                    ),
+                )
+
+                score_column_2.metric(
+                    method_label + " (상대)",
+                    format(
+                        row[
+                            relative_percent_column
+                        ],
+                        ".1f",
+                    )
+                    + "%",
+                )
+
+                with st.expander(
+                    "다른 유사도 방식 비교 보기"
+                ):
+                    compare_col_1, compare_col_2, compare_col_3, compare_col_4 = (
+                        st.columns(4)
+                    )
+
+                    compare_col_1.metric(
+                        "코사인",
+                        format(
+                            row["cosine_similarity"],
+                            ".4f",
+                        ),
+                    )
+
+                    compare_col_2.metric(
+                        "유클리드",
+                        format(
+                            row["euclidean_similarity"],
+                            ".4f",
+                        ),
+                    )
+
+                    compare_col_3.metric(
+                        "자카드",
+                        format(
+                            row["jaccard_similarity"],
+                            ".4f",
+                        ),
+                    )
+
+                    compare_col_4.metric(
+                        "통합",
+                        format(
+                            row["combined_similarity"],
+                            ".4f",
+                        ),
+                    )
+
+                progress_value = float(
+                    row[relative_column]
+                )
+
+                progress_value = max(
+                    0.0,
+                    min(
+                        progress_value,
+                        1.0,
+                    ),
+                )
+
+                st.progress(
+                    progress_value
+                )
+
+                st.write(
+                    "조회수: "
+                    + format(
+                        int(row["views"]),
+                        ",",
+                    )
+                    + " | 좋아요: "
+                    + format(
+                        int(row["likes"]),
+                        ",",
+                    )
+                )
+
+        st.subheader(
+            method_label + " 비교"
+        )
+
+        relative_chart = (
+            shown_recommendations[
+                [
+                    "title",
+                    relative_column,
+                ]
+            ]
+            .set_index("title")
+        )
+
+        st.bar_chart(
+            relative_chart
+        )
+
+        st.subheader(
+            method_label + " (원본값) 비교"
+        )
+
+        absolute_chart = (
+            shown_recommendations[
+                [
+                    "title",
+                    absolute_column,
+                ]
+            ]
+            .set_index("title")
+        )
+
+        st.bar_chart(
+            absolute_chart
+        )
+
+        st.subheader(
+            "4가지 유사도 방식 종합 비교 (상위 추천 기준)"
+        )
+
+        multi_method_chart = (
+            shown_recommendations[
+                [
+                    "title",
+                    "cosine_similarity",
+                    "euclidean_similarity",
+                    "jaccard_similarity",
+                    "combined_similarity",
+                ]
+            ]
+            .rename(
+                columns={
+                    "cosine_similarity": "코사인",
+                    "euclidean_similarity": "유클리드",
+                    "jaccard_similarity": "자카드",
+                    "combined_similarity": "통합",
+                }
+            )
+            .set_index("title")
+        )
+
+        st.bar_chart(
+            multi_method_chart
+        )
+
+        first_video_id = str(
+            shown_recommendations.iloc[
+                0
+            ]["video_id"]
+        )
+
+        candidate_lookup = (
+            recommendation_result[
+                "candidate_lookup"
+            ]
+        )
+
+        first_candidate = (
+            candidate_lookup[
+                first_video_id
+            ]
+        )
+
+        pair_tfidf_df = (
+            create_pair_tfidf_table(
+                source_details=(
+                    st.session_state[
+                        "source_details"
+                    ]
+                ),
+                tfidf_result=(
+                    st.session_state[
+                        "tfidf_result"
+                    ]
+                ),
+                candidate=(
+                    first_candidate
+                ),
+            )
+        )
+
+        st.subheader(
+            "추천 1위와 TF-IDF 비교"
+        )
+
+        st.dataframe(
+            pair_tfidf_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        download_1, download_2, download_3 = (
+            st.columns(3)
+        )
+
+        with download_1:
+            st.download_button(
+                "추천 결과 CSV",
+                data=to_csv_bytes(
+                    recommendations
+                ),
+                file_name=(
+                    method_key
+                    + "_recommendations.csv"
+                ),
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        with download_2:
+            st.download_button(
+                "전체 후보 CSV",
+                data=to_csv_bytes(
+                    recommendation_result[
+                        "all_results"
+                    ]
+                ),
+                file_name=(
+                    "all_candidate_scores.csv"
+                ),
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        with download_3:
+            st.download_button(
+                "Orange3 TF-IDF CSV",
+                data=to_csv_bytes(
+                    recommendation_result[
+                        "orange_df"
+                    ]
+                ),
+                file_name=(
+                    "orange_candidate_tfidf.csv"
+                ),
+                mime="text/csv",
+                use_container_width=True,
+            )
