@@ -45,6 +45,8 @@ SIMILARITY_METHODS = {
     "combined": "통합 유사도 (평균 33%씩)",
 }
 
+GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+
 
 # =========================================================
 # 2. 한국어 불용어
@@ -656,9 +658,7 @@ def prepare_source_text(
         fallback_text,
         "YouTube 자막 수집 실패: 제목·설명 사용",
     )
-
-
-# =========================================================
+    # =========================================================
 # 8. TF-IDF 분석
 # =========================================================
 
@@ -895,21 +895,21 @@ def generate_ai_summary(
             "핵심 키워드: " + keyword_text
         )
 
-     response = client.chat.completions.create(
-    model="llama-3.3-70b-versatile",
-    messages=[
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {
-            "role": "user",
-            "content": user_prompt,
-        },
-    ],
-    temperature=0.4,
-    max_tokens=500,
-)
+        response = client.chat.completions.create(
+            model=GROQ_MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
 
         summary_text = clean_text(
             response.choices[0].message.content
@@ -1123,6 +1123,8 @@ def search_candidates(
         )
 
     return candidates
+
+
 # =========================================================
 # 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
@@ -1135,11 +1137,6 @@ def calculate_jaccard_similarity(
     토큰 집합을 기준으로 자카드 유사도를 계산합니다.
 
     J(A, B) = |A ∩ B| / |A ∪ B|
-
-    - 단어의 '존재 여부'만 고려하며, 빈도나 중요도(TF-IDF)는
-      반영하지 않습니다.
-    - 두 텍스트가 공통으로 사용하는 어휘의 비율을 의미하며
-      0(전혀 겹치지 않음) ~ 1(완전히 동일한 단어 집합) 범위를 가집니다.
     """
 
     source_tokens = set(
@@ -1186,12 +1183,6 @@ def convert_distance_to_similarity(
     유클리드 거리를 0~1 범위의 유사도로 변환합니다.
 
     similarity = 1 / (1 + distance)
-
-    - 유클리드 거리는 TF-IDF 벡터 공간에서 두 문서 사이의
-      '직선 거리'를 의미합니다. 거리가 가까울수록(0에 가까울수록)
-      두 문서가 유사하다고 볼 수 있습니다.
-    - 코사인 유사도와 달리 벡터의 '방향'뿐 아니라 '크기(길이)'도
-      함께 반영되므로, 문서 길이 차이에 더 민감합니다.
     """
 
     distances = np.asarray(
@@ -1257,9 +1248,6 @@ def calculate_relative_recommendations(
     source_vector = matrix[0:1]
     candidate_vectors = matrix[1:]
 
-    # ---------------------------
-    # 1) 코사인 유사도
-    # ---------------------------
     cosine_values = cosine_similarity(
         source_vector,
         candidate_vectors,
@@ -1270,9 +1258,6 @@ def calculate_relative_recommendations(
             "코사인 유사도 결과가 비어 있습니다."
         )
 
-    # ---------------------------
-    # 2) 유클리드 유사도 (거리 -> 유사도 변환)
-    # ---------------------------
     euclidean_distance_values = euclidean_distances(
         source_vector,
         candidate_vectors,
@@ -1282,17 +1267,11 @@ def calculate_relative_recommendations(
         euclidean_distance_values
     )
 
-    # ---------------------------
-    # 3) 자카드 유사도 (토큰 집합 기반)
-    # ---------------------------
     jaccard_values = calculate_jaccard_similarity(
         source_comparison_text,
         candidate_texts,
     )
 
-    # ---------------------------
-    # 4) 통합 유사도 (각 33%씩 평균)
-    # ---------------------------
     combined_values = (
         cosine_values
         + euclidean_values
@@ -1625,9 +1604,7 @@ def to_csv_bytes(dataframe):
     return dataframe.to_csv(
         index=False
     ).encode("utf-8-sig")
-
-
-# =========================================================
+    # =========================================================
 # 11. 세션 상태
 # =========================================================
 
@@ -1740,7 +1717,7 @@ def perform_tfidf_analysis(
 
 
 # =========================================================
-# 12. 화면
+# 12. 화면 상단
 # =========================================================
 
 st.title(
@@ -1768,7 +1745,7 @@ TFIDF(t,d)=TF(t,d)\times IDF(t)
 
 ---
 
-### AI 요약 (Groq / Llama 3.1)
+### AI 요약 (Groq / Llama)
 
 TF-IDF로 뽑아낸 핵심 문장과 키워드를 대규모 언어모델에게
 전달하여, 문장을 그대로 복사하지 않고 내용을 이해한 뒤
@@ -1978,6 +1955,8 @@ with button_column_3:
         "🎯 유사도 추천",
         use_container_width=True,
     )
+
+
 # =========================================================
 # 13. 영상 요약 (Groq AI)
 # =========================================================
@@ -2098,10 +2077,9 @@ if summary_button:
                     )
 
                     st.caption(
-                        "✨ Groq(Llama 3.1)이 "
-                        "핵심 문장을 바탕으로 "
-                        "자연스럽게 재구성한 "
-                        "설명입니다."
+                        "✨ AI가 핵심 문장을 "
+                        "바탕으로 자연스럽게 "
+                        "재구성한 설명입니다."
                     )
 
                 else:
@@ -2465,9 +2443,8 @@ if (
         )
 
         st.caption(
-            "✨ Groq(Llama 3.1)이 핵심 문장을 "
-            "바탕으로 자연스럽게 재구성한 "
-            "설명입니다."
+            "✨ AI가 핵심 문장을 바탕으로 "
+            "자연스럽게 재구성한 설명입니다."
         )
 
     else:
