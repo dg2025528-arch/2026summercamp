@@ -1123,6 +1123,7 @@ def search_candidates(
         )
 
     return candidates
+# =========================================================
 # 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
 
@@ -1191,9 +1192,6 @@ def convert_distance_to_similarity(
       두 문서가 유사하다고 볼 수 있습니다.
     - 코사인 유사도와 달리 벡터의 '방향'뿐 아니라 '크기(길이)'도
       함께 반영되므로, 문서 길이 차이에 더 민감합니다.
-    - 거리값을 그대로 사용하면 값이 작을수록 유사한 것이라 직관과
-      반대이므로, 위 공식으로 변환하여 값이 클수록(1에 가까울수록)
-      유사하도록 만듭니다.
     """
 
     distances = np.asarray(
@@ -1221,7 +1219,7 @@ def calculate_relative_recommendations(
         + " "
         + source_details["title"]
         + " "
-        + tfidf_result["summary"]
+        + tfidf_result["extractive_summary"]
         + " "
         + " ".join(
             tfidf_result["keywords"][:15]
@@ -1561,7 +1559,7 @@ def create_pair_tfidf_table(
         + " "
         + source_details["title"]
         + " "
-        + tfidf_result["summary"]
+        + tfidf_result["extractive_summary"]
         + " "
         + " ".join(
             tfidf_result["keywords"][:15]
@@ -1666,6 +1664,7 @@ def perform_tfidf_analysis(
     manual_transcript,
     uploaded_subtitle,
     sentence_count,
+    groq_api_key,
 ):
     video_id = extract_video_id(
         youtube_url
@@ -1702,6 +1701,19 @@ def perform_tfidf_analysis(
     tfidf_result = analyze_tfidf(
         source_text=source_text,
         sentence_count=sentence_count,
+    )
+
+    ai_summary_result = generate_ai_summary(
+        video_title=video_details["title"],
+        extractive_summary=(
+            tfidf_result["extractive_summary"]
+        ),
+        keywords=tfidf_result["keywords"],
+        groq_api_key=groq_api_key,
+    )
+
+    tfidf_result["ai_summary_result"] = (
+        ai_summary_result
     )
 
     st.session_state.source_details = (
@@ -1756,6 +1768,14 @@ TFIDF(t,d)=TF(t,d)\times IDF(t)
 
 ---
 
+### AI 요약 (Groq / Llama 3.1)
+
+TF-IDF로 뽑아낸 핵심 문장과 키워드를 대규모 언어모델에게
+전달하여, 문장을 그대로 복사하지 않고 내용을 이해한 뒤
+자연스러운 설명으로 다시 작성합니다.
+
+---
+
 ### 1) 코사인 유사도 (Cosine Similarity)
 
 \[
@@ -1767,24 +1787,17 @@ CosineSimilarity(A,B)
 
 두 TF-IDF 벡터가 이루는 각도를 기준으로 유사도를 측정합니다.
 벡터의 **방향**만 비교하기 때문에 문서 길이 차이에
-상대적으로 덜 민감합니다. 값은 0(전혀 다름)~1(완전히 같은 방향)
-사이입니다.
+상대적으로 덜 민감합니다.
 
 ---
 
 ### 2) 유클리드 유사도 (Euclidean Similarity)
-
-먼저 두 벡터 사이의 유클리드 거리를 구합니다.
 
 \[
 EuclideanDistance(A,B)
 =
 \sqrt{\sum_i (A_i - B_i)^2}
 \]
-
-거리는 값이 작을수록 유사하다는 의미이므로,
-직관적으로 이해하기 쉽도록 아래 공식으로
-0~1 사이의 유사도로 변환합니다.
 
 \[
 EuclideanSimilarity(A,B)
@@ -1807,8 +1820,7 @@ JaccardSimilarity(A,B)
 \]
 
 TF-IDF 점수를 사용하지 않고, 단어(토큰)의 **존재 여부**만
-집합으로 비교합니다. 즉 "같은 단어를 얼마나 공유하는가"를
-직접적으로 나타내며, 단어 빈도나 중요도는 반영하지 않습니다.
+집합으로 비교합니다.
 
 ---
 
@@ -1825,8 +1837,7 @@ CosineSimilarity
 \]
 
 세 가지 유사도를 각각 33.3%씩 동일한 비중으로 반영하여
-평균을 낸 값입니다. 한 가지 방식에 치우치지 않고
-방향·크기·어휘 중복도를 골고루 고려한 균형 잡힌 지표입니다.
+평균을 낸 값입니다.
 
 ---
 
@@ -1898,11 +1909,19 @@ with st.sidebar:
     )
 
 api_key = get_api_key()
+groq_api_key = get_groq_api_key()
 
 if not api_key:
     st.warning(
         "Streamlit Secrets에 "
         "YOUTUBE_API_KEY를 설정하세요."
+    )
+
+if not groq_api_key:
+    st.info(
+        "GROQ_API_KEY가 설정되지 않아 "
+        "AI 자연어 요약 대신 TF-IDF 추출 요약을 "
+        "사용합니다."
     )
 
 youtube_url = st.text_input(
@@ -1942,8 +1961,8 @@ button_column_1, button_column_2, button_column_3 = (
 )
 
 with button_column_1:
-    diagnose_button = st.button(
-        "🔍 자막 진단",
+    summary_button = st.button(
+        "🤖 영상 요약",
         use_container_width=True,
     )
 
@@ -1959,71 +1978,203 @@ with button_column_3:
         "🎯 유사도 추천",
         use_container_width=True,
     )
-
-
 # =========================================================
-# 13. 자막 진단
+# 13. 영상 요약 (Groq AI)
 # =========================================================
 
-if diagnose_button:
-    diagnosis_video_id = extract_video_id(
-        youtube_url
-    )
-
-    if not diagnosis_video_id:
+if summary_button:
+    if not api_key:
         st.error(
-            "올바른 YouTube URL을 입력하세요."
+            "YouTube API 키를 먼저 설정하세요."
         )
 
     else:
-        with st.spinner(
-            "자막을 진단하고 있습니다..."
-        ):
-            diagnosis = get_transcript(
-                diagnosis_video_id
-            )
+        summary_video_id = extract_video_id(
+            youtube_url
+        )
 
-        if diagnosis["success"]:
-            st.success(
-                "자막 수집 성공"
-            )
-
-            metric_1, metric_2 = st.columns(2)
-
-            metric_1.metric(
-                "언어",
-                diagnosis["language"],
-            )
-
-            metric_2.metric(
-                "자막 유형",
-                (
-                    "자동 생성"
-                    if diagnosis["generated"]
-                    else "수동 등록"
-                ),
-            )
-
-            st.text_area(
-                "자막 미리보기",
-                diagnosis["text"][:2000],
-                height=250,
+        if not summary_video_id:
+            st.error(
+                "올바른 YouTube URL을 입력하세요."
             )
 
         else:
-            st.error(
-                "자막 자동 수집 실패"
-            )
+            try:
+                with st.spinner(
+                    "영상 정보와 자막을 "
+                    "수집하고 있습니다..."
+                ):
+                    summary_video_details = (
+                        get_video_details(
+                            summary_video_id,
+                            api_key,
+                        )
+                    )
 
-            st.write(
-                "오류 유형: "
-                + diagnosis["error_type"]
-            )
+                    if (
+                        summary_video_details
+                        is None
+                    ):
+                        raise ValueError(
+                            "영상 정보를 찾지 "
+                            "못했습니다."
+                        )
 
-            st.code(
-                diagnosis["error_message"]
-                or "오류 메시지가 없습니다."
-            )
+                    (
+                        summary_source_text,
+                        summary_source_label,
+                    ) = prepare_source_text(
+                        video_id=(
+                            summary_video_id
+                        ),
+                        video_details=(
+                            summary_video_details
+                        ),
+                        manual_transcript=(
+                            manual_transcript
+                        ),
+                        uploaded_subtitle=(
+                            uploaded_subtitle
+                        ),
+                    )
+
+                    quick_tfidf_result = (
+                        analyze_tfidf(
+                            source_text=(
+                                summary_source_text
+                            ),
+                            sentence_count=(
+                                summary_sentence_count
+                            ),
+                        )
+                    )
+
+                with st.spinner(
+                    "AI가 영상 내용을 "
+                    "요약하고 있습니다..."
+                ):
+                    quick_ai_summary = (
+                        generate_ai_summary(
+                            video_title=(
+                                summary_video_details[
+                                    "title"
+                                ]
+                            ),
+                            extractive_summary=(
+                                quick_tfidf_result[
+                                    "extractive_summary"
+                                ]
+                            ),
+                            keywords=(
+                                quick_tfidf_result[
+                                    "keywords"
+                                ]
+                            ),
+                            groq_api_key=(
+                                groq_api_key
+                            ),
+                        )
+                    )
+
+                st.success(
+                    "영상 요약 완료"
+                )
+
+                st.markdown(
+                    "### "
+                    + summary_video_details[
+                        "title"
+                    ]
+                )
+
+                st.caption(
+                    "분석 데이터: "
+                    + summary_source_label
+                )
+
+                if quick_ai_summary["success"]:
+                    st.write(
+                        quick_ai_summary["text"]
+                    )
+
+                    st.caption(
+                        "✨ Groq(Llama 3.1)이 "
+                        "핵심 문장을 바탕으로 "
+                        "자연스럽게 재구성한 "
+                        "설명입니다."
+                    )
+
+                else:
+                    st.write(
+                        quick_tfidf_result[
+                            "extractive_summary"
+                        ]
+                    )
+
+                    st.warning(
+                        "AI 요약을 사용할 수 "
+                        "없어 자막에서 추출한 "
+                        "문장을 그대로 "
+                        "표시했습니다."
+                    )
+
+                    st.write(
+                        "오류 유형: "
+                        + quick_ai_summary[
+                            "error_type"
+                        ]
+                    )
+
+                    st.code(
+                        quick_ai_summary[
+                            "error_message"
+                        ]
+                        or "오류 메시지가 "
+                        "없습니다."
+                    )
+
+                with st.expander(
+                    "핵심 키워드 보기"
+                ):
+                    st.dataframe(
+                        quick_tfidf_result[
+                            "keyword_df"
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                with st.expander(
+                    "원문 근거 문장 보기 "
+                    "(TF-IDF 추출 원본)"
+                ):
+                    st.write(
+                        quick_tfidf_result[
+                            "extractive_summary"
+                        ]
+                    )
+
+            except Exception as error:
+                st.error(
+                    "영상 요약 실패"
+                )
+
+                st.write(
+                    "오류 유형: "
+                    + type(error).__name__
+                )
+
+                st.write(
+                    "오류 내용: "
+                    + str(error)
+                )
+
+                with st.expander(
+                    "상세 오류"
+                ):
+                    st.code(
+                        traceback.format_exc()
+                    )
 
 
 # =========================================================
@@ -2054,6 +2205,9 @@ if tfidf_button:
                     ),
                     sentence_count=(
                         summary_sentence_count
+                    ),
+                    groq_api_key=(
+                        groq_api_key
                     ),
                 )
 
@@ -2124,6 +2278,9 @@ if recommendation_button:
                     ),
                     sentence_count=(
                         summary_sentence_count
+                    ),
+                    groq_api_key=(
+                        groq_api_key
                     ),
                 )
 
@@ -2297,9 +2454,43 @@ if (
         "핵심 내용 요약"
     )
 
-    st.write(
-        tfidf_result["summary"]
+    ai_summary_result = tfidf_result.get(
+        "ai_summary_result",
+        {"success": False},
     )
+
+    if ai_summary_result.get("success"):
+        st.write(
+            ai_summary_result["text"]
+        )
+
+        st.caption(
+            "✨ Groq(Llama 3.1)이 핵심 문장을 "
+            "바탕으로 자연스럽게 재구성한 "
+            "설명입니다."
+        )
+
+    else:
+        st.write(
+            tfidf_result["extractive_summary"]
+        )
+
+        st.caption(
+            "⚠️ AI 요약을 사용할 수 없어 "
+            "자막에서 추출한 문장을 그대로 "
+            "표시했습니다. (사유: "
+            + ai_summary_result.get(
+                "error_type", "알 수 없음"
+            )
+            + ")"
+        )
+
+    with st.expander(
+        "원문 근거 문장 보기 (TF-IDF 추출 원본)"
+    ):
+        st.write(
+            tfidf_result["extractive_summary"]
+        )
 
     st.subheader(
         "핵심 키워드"
@@ -2519,14 +2710,19 @@ if recommendation_result is not None:
                 with st.expander(
                     "다른 유사도 방식 비교 보기"
                 ):
-                    compare_col_1, compare_col_2, compare_col_3, compare_col_4 = (
-                        st.columns(4)
-                    )
+                    (
+                        compare_col_1,
+                        compare_col_2,
+                        compare_col_3,
+                        compare_col_4,
+                    ) = st.columns(4)
 
                     compare_col_1.metric(
                         "코사인",
                         format(
-                            row["cosine_similarity"],
+                            row[
+                                "cosine_similarity"
+                            ],
                             ".4f",
                         ),
                     )
@@ -2534,7 +2730,9 @@ if recommendation_result is not None:
                     compare_col_2.metric(
                         "유클리드",
                         format(
-                            row["euclidean_similarity"],
+                            row[
+                                "euclidean_similarity"
+                            ],
                             ".4f",
                         ),
                     )
@@ -2542,7 +2740,9 @@ if recommendation_result is not None:
                     compare_col_3.metric(
                         "자카드",
                         format(
-                            row["jaccard_similarity"],
+                            row[
+                                "jaccard_similarity"
+                            ],
                             ".4f",
                         ),
                     )
@@ -2550,7 +2750,9 @@ if recommendation_result is not None:
                     compare_col_4.metric(
                         "통합",
                         format(
-                            row["combined_similarity"],
+                            row[
+                                "combined_similarity"
+                            ],
                             ".4f",
                         ),
                     )
@@ -2621,7 +2823,8 @@ if recommendation_result is not None:
         )
 
         st.subheader(
-            "4가지 유사도 방식 종합 비교 (상위 추천 기준)"
+            "4가지 유사도 방식 종합 비교 "
+            "(상위 추천 기준)"
         )
 
         multi_method_chart = (
@@ -2636,10 +2839,18 @@ if recommendation_result is not None:
             ]
             .rename(
                 columns={
-                    "cosine_similarity": "코사인",
-                    "euclidean_similarity": "유클리드",
-                    "jaccard_similarity": "자카드",
-                    "combined_similarity": "통합",
+                    "cosine_similarity": (
+                        "코사인"
+                    ),
+                    "euclidean_similarity": (
+                        "유클리드"
+                    ),
+                    "jaccard_similarity": (
+                        "자카드"
+                    ),
+                    "combined_similarity": (
+                        "통합"
+                    ),
                 }
             )
             .set_index("title")
