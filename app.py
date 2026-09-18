@@ -34,16 +34,10 @@ st.set_page_config(
 MAX_TRANSCRIPT_CHARACTERS = 30000
 MAX_TFIDF_FEATURES = 1500
 
-# 절대값은 거의 0인 결과만 제외합니다.
 ABSOLUTE_MINIMUM_SIMILARITY = 0.001
-
-# 최고 후보의 30% 이상인 후보를 상대 추천합니다.
 RELATIVE_MINIMUM_SIMILARITY = 0.30
-
-# 최고 유사도가 이보다 낮으면 품질 경고를 표시합니다.
 LOW_QUALITY_WARNING = 0.03
 
-# 유사도 방식 정의
 SIMILARITY_METHODS = {
     "cosine": "코사인 유사도",
     "euclidean": "유클리드 유사도",
@@ -143,7 +137,6 @@ def split_sentences(text):
         if 15 <= len(sentence) <= 600:
             valid_sentences.append(sentence)
 
-    # 자동 자막에 문장부호가 없는 경우 글자 수로 나눕니다.
     if len(valid_sentences) <= 1 and len(text) > 300:
         valid_sentences = []
 
@@ -1130,7 +1123,6 @@ def search_candidates(
         )
 
     return candidates
-# =========================================================
 # 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
 
