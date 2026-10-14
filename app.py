@@ -1525,7 +1525,295 @@ def calculate_relative_recommendations(
         "candidate_lookup": candidate_lookup,
     }
 
+def compare_similarity_methods(
+    recommendation_result,
+    top_k=5,
+):
+    """유사도별 상위 후보 일치도와 순위를 비교합니다."""
+    method_map = recommendation_result[
+        "similarity_column_map"
+    ]
+    all_results = recommendation_result["all_results"]
 
+    method_keys = list(method_map.keys())
+    top_ids = {}
+
+    for method in method_keys:
+        absolute_col, _, _ = method_map[method]
+
+        ranked = all_results.sort_values(
+            absolute_col, ascending=False
+        )
+
+        top_ids[method] = ranked.head(top_k)[
+            "video_id"
+        ].tolist()
+
+    rows = []
+
+    for method in method_keys:
+        absolute_col, _, _ = method_map[method]
+        ranked = all_results.sort_values(
+            absolute_col, ascending=False
+        )
+
+        scores = ranked[absolute_col].to_numpy()
+        top_mean = float(scores[:top_k].mean()) if len(scores) else 0.0
+
+        overlaps = []
+        for other in method_keys:
+            if other == method:
+                continue
+
+            a = set(top_ids[method])
+            b = set(top_ids[other])
+            union = a | b
+
+            overlaps.append(
+                len(a & b) / len(union) if union else 0.0
+            )
+
+        rows.append({
+            "유사도 방식": SIMILARITY_METHODS[method],
+            "1위 영상": (
+                ranked.iloc[0]["title"] if len(ranked) else ""
+            ),
+            f"상위 {top_k}개 평균 점수": round(top_mean, 4),
+            "다른 방식과의 평균 상위권 일치도": round(
+                float(np.mean(overlaps)) if overlaps else 1.0,
+                3,
+            ),
+            "상위 후보 수": len(top_ids[method]),
+        })
+
+    comparison = pd.DataFrame(rows)
+
+    # 정답 데이터가 없는 상황에서의 참고용 지표입니다.
+    # 일치도가 높다고 실제 추천 품질까지 높다는 뜻은 아닙니다.
+    best_index = comparison[
+        "다른 방식과의 평균 상위권 일치도"
+    ].idxmax()
+
+    comparison["상위권 안정성 1위"] = False
+    comparison.loc[best_index, "상위권 안정성 1위"] = True
+
+    return comparison, top_ids
+
+
+def explain_recommendation(
+    source_details,
+    tfidf_result,
+    candidate,
+    recommendation_row,
+    method_key,
+    recommendation_result,
+):
+    """공통 키워드와 다른 방식의 순위를 이용해 추천 근거를 만듭니다."""
+
+    source_text = clean_text(
+        source_details["title"] + " "
+        + tfidf_result["extractive_summary"] + " "
+        + " ".join(tfidf_result["keywords"][:20])
+    )
+
+    candidate_text = clean_text(
+        candidate.get("title", "") + " "
+        + candidate.get("description", "")
+    )
+
+    source_tokens = set(tokenize_mixed_text(source_text))
+    candidate_tokens = set(tokenize_mixed_text(candidate_text))
+    common = source_tokens & candidate_tokens
+
+    keywords = tfidf_result["keywords"]
+    prioritized = [word for word in keywords if word in common]
+
+    if not prioritized:
+        prioritized = sorted(common, key=len, reverse=True)
+
+    scores = {
+        "cosine": recommendation_row["cosine_similarity"],
+        "euclidean": recommendation_row["euclidean_similarity"],
+        "jaccard": recommendation_row["jaccard_similarity"],
+        "combined": recommendation_row["combined_similarity"],
+    }
+
+    method_labels = {
+        "cosine": "코사인",
+        "euclidean": "유클리드",
+        "jaccard": "자카드",
+        "combined": "통합",
+    }
+
+    ranked_results = recommendation_result["all_results"]
+    rank_positions = {}
+
+    for method, (absolute_col, _, _) in (
+        recommendation_result["similarity_column_map"].items()
+    ):
+        ordered = ranked_results.sort_values(
+            absolute_col, ascending=False
+        ).reset_index(drop=True)
+
+        matches = ordered.index[
+            ordered["video_id"] == candidate["video_id"]
+        ].tolist()
+
+        rank_positions[method] = (
+            matches[0] + 1 if matches else None
+        )
+
+    return {
+        "common_keywords": prioritized[:8],
+        "scores": scores,
+        "method_labels": method_labels,
+        "rank_positions": rank_positions,
+    }
+    def compare_similarity_methods(
+    recommendation_result,
+    top_k=5,
+):
+    """유사도별 상위 후보 일치도와 순위를 비교합니다."""
+    method_map = recommendation_result[
+        "similarity_column_map"
+    ]
+    all_results = recommendation_result["all_results"]
+
+    method_keys = list(method_map.keys())
+    top_ids = {}
+
+    for method in method_keys:
+        absolute_col, _, _ = method_map[method]
+
+        ranked = all_results.sort_values(
+            absolute_col, ascending=False
+        )
+
+        top_ids[method] = ranked.head(top_k)[
+            "video_id"
+        ].tolist()
+
+    rows = []
+
+    for method in method_keys:
+        absolute_col, _, _ = method_map[method]
+        ranked = all_results.sort_values(
+            absolute_col, ascending=False
+        )
+
+        scores = ranked[absolute_col].to_numpy()
+        top_mean = float(scores[:top_k].mean()) if len(scores) else 0.0
+
+        overlaps = []
+        for other in method_keys:
+            if other == method:
+                continue
+
+            a = set(top_ids[method])
+            b = set(top_ids[other])
+            union = a | b
+
+            overlaps.append(
+                len(a & b) / len(union) if union else 0.0
+            )
+
+        rows.append({
+            "유사도 방식": SIMILARITY_METHODS[method],
+            "1위 영상": (
+                ranked.iloc[0]["title"] if len(ranked) else ""
+            ),
+            f"상위 {top_k}개 평균 점수": round(top_mean, 4),
+            "다른 방식과의 평균 상위권 일치도": round(
+                float(np.mean(overlaps)) if overlaps else 1.0,
+                3,
+            ),
+            "상위 후보 수": len(top_ids[method]),
+        })
+
+    comparison = pd.DataFrame(rows)
+
+    # 정답 데이터가 없는 상황에서의 참고용 지표입니다.
+    # 일치도가 높다고 실제 추천 품질까지 높다는 뜻은 아닙니다.
+    best_index = comparison[
+        "다른 방식과의 평균 상위권 일치도"
+    ].idxmax()
+
+    comparison["상위권 안정성 1위"] = False
+    comparison.loc[best_index, "상위권 안정성 1위"] = True
+
+    return comparison, top_ids
+
+
+def explain_recommendation(
+    source_details,
+    tfidf_result,
+    candidate,
+    recommendation_row,
+    method_key,
+    recommendation_result,
+):
+    """공통 키워드와 다른 방식의 순위를 이용해 추천 근거를 만듭니다."""
+
+    source_text = clean_text(
+        source_details["title"] + " "
+        + tfidf_result["extractive_summary"] + " "
+        + " ".join(tfidf_result["keywords"][:20])
+    )
+
+    candidate_text = clean_text(
+        candidate.get("title", "") + " "
+        + candidate.get("description", "")
+    )
+
+    source_tokens = set(tokenize_mixed_text(source_text))
+    candidate_tokens = set(tokenize_mixed_text(candidate_text))
+    common = source_tokens & candidate_tokens
+
+    keywords = tfidf_result["keywords"]
+    prioritized = [word for word in keywords if word in common]
+
+    if not prioritized:
+        prioritized = sorted(common, key=len, reverse=True)
+
+    scores = {
+        "cosine": recommendation_row["cosine_similarity"],
+        "euclidean": recommendation_row["euclidean_similarity"],
+        "jaccard": recommendation_row["jaccard_similarity"],
+        "combined": recommendation_row["combined_similarity"],
+    }
+
+    method_labels = {
+        "cosine": "코사인",
+        "euclidean": "유클리드",
+        "jaccard": "자카드",
+        "combined": "통합",
+    }
+
+    ranked_results = recommendation_result["all_results"]
+    rank_positions = {}
+
+    for method, (absolute_col, _, _) in (
+        recommendation_result["similarity_column_map"].items()
+    ):
+        ordered = ranked_results.sort_values(
+            absolute_col, ascending=False
+        ).reset_index(drop=True)
+
+        matches = ordered.index[
+            ordered["video_id"] == candidate["video_id"]
+        ].tolist()
+
+        rank_positions[method] = (
+            matches[0] + 1 if matches else None
+        )
+
+    return {
+        "common_keywords": prioritized[:8],
+        "scores": scores,
+        "method_labels": method_labels,
+        "rank_positions": rank_positions,
+    }
+    
 def create_pair_tfidf_table(
     source_details,
     tfidf_result,
@@ -1834,15 +2122,16 @@ RelativeSimilarity_i
     )
 
 if st.sidebar.button(
-    "🗑️ 캐시 및 결과 초기화",
-    use_container_width=True,
-):
-    st.cache_data.clear()
-    reset_session_results()
-
-    st.sidebar.success(
-        "초기화했습니다."
-    )
+ selected_similarity_method = st.radio(
+    "추천 유사도 방식",
+    options=list(SIMILARITY_METHODS.keys()),
+    format_func=lambda key: SIMILARITY_METHODS[key],
+    index=0,  # 코사인 기본값
+    help=(
+        "유사도 비교 탭에서 상위 후보의 일치도와 "
+        "각 방식의 순위를 확인한 뒤 선택하세요."
+    ),
+)
 
 with st.sidebar:
     st.header("설정")
@@ -2347,7 +2636,17 @@ if recommendation_button:
                     traceback.format_exc()
                 )
 
+# =========================================================
+# 15-1. 분석 결과 탭
+# =========================================================
 
+tab_dashboard, tab_tfidf, tab_compare, tab_recommend, tab_export = st.tabs([
+    "📌 대시보드",
+    "📊 TF-IDF 분석",
+    "🔬 유사도 비교",
+    "🎯 추천 영상",
+    "📥 데이터 내보내기",
+])
 # =========================================================
 # 16. 입력 영상 정보
 # =========================================================
@@ -2749,6 +3048,63 @@ if recommendation_result is not None:
                 st.progress(
                     progress_value
                 )
+                with st.expander("💡 이 영상이 추천된 이유"):
+    candidate = recommendation_result[
+        "candidate_lookup"
+    ][str(row["video_id"])]
+
+    reason = explain_recommendation(
+        source_details=st.session_state.source_details,
+        tfidf_result=st.session_state.tfidf_result,
+        candidate=candidate,
+        recommendation_row=row,
+        method_key=method_key,
+        recommendation_result=recommendation_result,
+    )
+
+    st.markdown("**공통 핵심 키워드**")
+
+    if reason["common_keywords"]:
+        st.write(
+            ", ".join(reason["common_keywords"])
+        )
+    else:
+        st.write(
+            "제목 및 설명에서 공통 토큰을 찾지 못했습니다. "
+            "점수와 원문을 추가로 확인해 주세요."
+        )
+
+    st.markdown("**유사도 방식별 점수**")
+
+    score_cols = st.columns(4)
+
+    for col, method in zip(
+        score_cols,
+        ["cosine", "euclidean", "jaccard", "combined"],
+    ):
+        col.metric(
+            reason["method_labels"][method],
+            f'{reason["scores"][method]:.4f}',
+            help="원본 유사도 점수이며 상대 점수가 아닙니다.",
+        )
+
+    st.markdown("**다른 방식에서의 순위**")
+
+    rank_text = " · ".join(
+        f"{SIMILARITY_METHODS[m]}: "
+        f"{rank}위" if rank is not None
+        else f"{SIMILARITY_METHODS[m]}: 순위 없음"
+        for m, rank in reason["rank_positions"].items()
+    )
+
+    st.write(rank_text)
+
+    st.caption(
+        "추천 근거는 현재 수집된 제목·설명·추출 키워드와 "
+        "유사도 점수를 기반으로 계산됩니다. "
+        "공통 키워드가 적더라도 표현이 다르거나 "
+        "설명이 짧으면 유사도가 낮게 나타날 수 있습니다."
+    )
 
                 st.write(
                     "조회수: "
