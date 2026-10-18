@@ -3049,7 +3049,7 @@ if recommendation_result is not None:
                 st.progress(
                     progress_value
                 )
-                with st.expander("💡 이 영상이 추천된 이유"):
+             with st.expander("💡 이 영상이 추천된 이유"):
     candidate = recommendation_result[
         "candidate_lookup"
     ][str(row["video_id"])]
@@ -3287,3 +3287,4 @@ if recommendation_result is not None:
                 mime="text/csv",
                 use_container_width=True,
             )
+
