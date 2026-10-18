@@ -1096,7 +1096,7 @@ with st.sidebar:
             new_recommend = st.slider(
                 "표시할 추천 수", 1, 10, current["recommendation_count"]
             )
-    if st.form_submit_button("적용", use_container_width=True):
+        if st.form_submit_button("적용", use_container_width=True):
                 st.session_state.settings = {
                     "sentence_count": new_sentence,
                     "candidate_count": new_candidate,
@@ -1107,7 +1107,7 @@ with st.sidebar:
 
     st.divider()
 
-       if "page" not in st.session_state:
+    if "page" not in st.session_state:
         st.session_state.page = "📝 요약"
 
     for menu_name in ["📝 요약", "📊 TF-IDF", "🎯 유사도"]:
