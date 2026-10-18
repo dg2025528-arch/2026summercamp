@@ -2887,7 +2887,11 @@ if (
             "최고 원본 유사도",
             format(
                 maximum_similarity,
-                ".4f summary_metric_2.metric(
+                ".4f",
+            ),
+        )
+
+        summary_metric_2.metric(
             "상대 추천 기준",
             format(
                 RELATIVE_MINIMUM_SIMILARITY
@@ -2896,6 +2900,7 @@ if (
             )
             + "%",
         )
+
 
         if (
             maximum_similarity
