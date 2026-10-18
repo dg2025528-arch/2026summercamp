@@ -125,9 +125,6 @@ pip install -r requirements.txt
 
 `.streamlit/secrets.toml` 파일을 만들고 입력합니다. 키 이름은 `app.py`에서 실제 사용하는 이름과 같아야 합니다.
 
-
-> ⚠️ `secrets.toml`은 GitHub에 올리지 마세요. `.gitignore`에 추가합니다.
-
 ### 4. 실행
 
 ```bash
