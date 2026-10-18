@@ -43,7 +43,7 @@ SIMILARITY_METHODS = {
     "euclidean": "유클리드 유사도",
     "jaccard": "자카드 유사도",
 }   # "combined" 삭제
-}
+
 # [신규] 데이터별 권장 가이드 (덩어리 3의 가이드 탭에서 표시)
 METHOD_GUIDE = {
     "cosine": {
@@ -61,6 +61,7 @@ METHOD_GUIDE = {
         "why": "단어 빈도·IDF에 의존하지 않고 겹치는 단어 비율만 봅니다. 후보 수가 적어 IDF가 불안정할 때도 안정적입니다.",
         "weak": "한쪽이 훨씬 길면 합집합이 커져 점수가 눌립니다. 단어 중요도도 반영하지 못합니다.",
     },
+}
 
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
 
