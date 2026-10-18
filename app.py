@@ -2829,462 +2829,455 @@ if (
 # 18. 추천 결과
 # =========================================================
 
-recommendation_result = (
-    st.session_state.recommendation_result
-)
-
-if recommendation_result is not None:
-    st.divider()
-
-    st.header(
-        "🎯 유사도 기반 추천"
+    recommendation_result = (
+        st.session_state.recommendation_result
     )
 
-    st.write(
-        "사용한 검색어: `"
-        + st.session_state[
-            "search_query"
-        ]
-        + "`"
-    )
+    if recommendation_result is not None:
+        st.divider()
 
-    method_key = selected_similarity_method
-    method_label = SIMILARITY_METHODS[method_key]
-
-    similarity_column_map = (
-        recommendation_result[
-            "similarity_column_map"
-        ]
-    )
-
-    (
-        absolute_column,
-        relative_column,
-        relative_percent_column,
-    ) = similarity_column_map[method_key]
-
-    maximum_similarity = (
-        recommendation_result[
-            "maximum_similarity_map"
-        ][method_key]
-    )
-
-    recommendations = (
-        recommendation_result[
-            "recommendations_by_method"
-        ][method_key]
-    )
-
-    st.subheader(
-        "선택한 방식: " + method_label
-    )
-
-    summary_metric_1, summary_metric_2 = (
-        st.columns(2)
-    )
-
-    summary_metric_1.metric(
-        "최고 원본 유사도",
-        format(
-            maximum_similarity,
-            ".4f",
-        ),
-    )
-
-    summary_metric_2.metric(
-        "상대 추천 기준",
-        format(
-            RELATIVE_MINIMUM_SIMILARITY
-            * 100,
-            ".0f",
-        )
-        + "%",
-    )
-
-    if (
-        maximum_similarity
-        < LOW_QUALITY_WARNING
-    ):
-        st.warning(
-            "후보 전체의 원본 유사도가 낮습니다. "
-            "상대 점수는 후보들 사이의 순위이지, "
-            "절대적으로 관련성이 높다는 뜻은 아닙니다."
+        st.header(
+            "🎯 유사도 기반 추천"
         )
 
-    if recommendations.empty:
-        st.warning(
-            "유사도가 0보다 큰 "
-            "후보를 찾지 못했습니다."
-        )
-
-    else:
-        shown_recommendations = (
-            recommendations.head(
-                recommendation_count
-            )
-        )
-
-        for rank, row_tuple in enumerate(
-            shown_recommendations.itertuples(
-                index=False
-            ),
-            start=1,
-        ):
-            row = row_tuple._asdict()
-
-            st.markdown("---")
-
-            image_column, result_column = (
-                st.columns([1, 3])
-            )
-
-            with image_column:
-                if row["thumbnail"]:
-                    st.image(
-                        row["thumbnail"],
-                        use_container_width=True,
-                    )
-
-            with result_column:
-                st.markdown(
-                    "### "
-                    + str(rank)
-                    + ". ["
-                    + row["title"]
-                    + "]("
-                    + row["url"]
-                    + ")"
-                )
-
-                st.write(
-                    "채널: "
-                    + row["channel_title"]
-                )
-
-                score_column_1, score_column_2 = (
-                    st.columns(2)
-                )
-
-                score_column_1.metric(
-                    method_label + " (원본)",
-                    format(
-                        row[absolute_column],
-                        ".4f",
-                    ),
-                )
-
-                score_column_2.metric(
-                    method_label + " (상대)",
-                    format(
-                        row[
-                            relative_percent_column
-                        ],
-                        ".1f",
-                    )
-                    + "%",
-                )
-
-                with st.expander(
-                    "다른 유사도 방식 비교 보기"
-                ):
-                    (
-                        compare_col_1,
-                        compare_col_2,
-                        compare_col_3,
-                        compare_col_4,
-                    ) = st.columns(4)
-
-                    compare_col_1.metric(
-                        "코사인",
-                        format(
-                            row[
-                                "cosine_similarity"
-                            ],
-                            ".4f",
-                        ),
-                    )
-
-                    compare_col_2.metric(
-                        "유클리드",
-                        format(
-                            row[
-                                "euclidean_similarity"
-                            ],
-                            ".4f",
-                        ),
-                    )
-
-                    compare_col_3.metric(
-                        "자카드",
-                        format(
-                            row[
-                                "jaccard_similarity"
-                            ],
-                            ".4f",
-                        ),
-                    )
-
-                    compare_col_4.metric(
-                        "통합",
-                        format(
-                            row[
-                                "combined_similarity"
-                            ],
-                            ".4f",
-                        ),
-                    )
-
-                progress_value = float(
-                    row[relative_column]
-                )
-
-                progress_value = max(
-                    0.0,
-                    min(
-                        progress_value,
-                        1.0,
-                    ),
-                )
-
-                st.progress(
-                    progress_value
-                )
- with st.expander("💡 이 영상이 추천된 이유"):
-    candidate = recommendation_result[
-        "candidate_lookup"
-    ][str(row["video_id"])]
-
-    reason = explain_recommendation(
-        source_details=st.session_state.source_details,
-        tfidf_result=st.session_state.tfidf_result,
-        candidate=candidate,
-        recommendation_row=row,
-        method_key=method_key,
-        recommendation_result=recommendation_result,
-    )
-
-    st.markdown("**공통 핵심 키워드**")
-
-    if reason["common_keywords"]:
         st.write(
-            ", ".join(reason["common_keywords"])
-        )
-    else:
-        st.write(
-            "제목 및 설명에서 공통 토큰을 찾지 못했습니다. "
-            "점수와 원문을 추가로 확인해 주세요."
-        )
-
-    st.markdown("**유사도 방식별 점수**")
-
-    score_cols = st.columns(4)
-
-    for col, method in zip(
-        score_cols,
-        ["cosine", "euclidean", "jaccard", "combined"],
-    ):
-        col.metric(
-            reason["method_labels"][method],
-            f'{reason["scores"][method]:.4f}',
-            help="원본 유사도 점수이며 상대 점수가 아닙니다.",
-        )
-
-    st.markdown("**다른 방식에서의 순위**")
-
-    rank_text = " · ".join(
-        f"{SIMILARITY_METHODS[m]}: "
-        f"{rank}위" if rank is not None
-        else f"{SIMILARITY_METHODS[m]}: 순위 없음"
-        for m, rank in reason["rank_positions"].items()
-    )
-
-    st.write(rank_text)
-
-    st.caption(
-        "추천 근거는 현재 수집된 제목·설명·추출 키워드와 "
-        "유사도 점수를 기반으로 계산됩니다. "
-        "공통 키워드가 적더라도 표현이 다르거나 "
-        "설명이 짧으면 유사도가 낮게 나타날 수 있습니다."
-    )
-
-                st.write(
-                    "조회수: "
-                    + format(
-                        int(row["views"]),
-                        ",",
-                    )
-                    + " | 좋아요: "
-                    + format(
-                        int(row["likes"]),
-                        ",",
-                    )
-                )
-
-        st.subheader(
-            method_label + " 비교"
-        )
-
-        relative_chart = (
-            shown_recommendations[
-                [
-                    "title",
-                    relative_column,
-                ]
+            "사용한 검색어: `"
+            + st.session_state[
+                "search_query"
             ]
-            .set_index("title")
+            + "`"
         )
 
-        st.bar_chart(
-            relative_chart
-        )
+        method_key = selected_similarity_method
+        method_label = SIMILARITY_METHODS[method_key]
 
-        st.subheader(
-            method_label + " (원본값) 비교"
-        )
-
-        absolute_chart = (
-            shown_recommendations[
-                [
-                    "title",
-                    absolute_column,
-                ]
-            ]
-            .set_index("title")
-        )
-
-        st.bar_chart(
-            absolute_chart
-        )
-
-        st.subheader(
-            "4가지 유사도 방식 종합 비교 "
-            "(상위 추천 기준)"
-        )
-
-        multi_method_chart = (
-            shown_recommendations[
-                [
-                    "title",
-                    "cosine_similarity",
-                    "euclidean_similarity",
-                    "jaccard_similarity",
-                    "combined_similarity",
-                ]
-            ]
-            .rename(
-                columns={
-                    "cosine_similarity": (
-                        "코사인"
-                    ),
-                    "euclidean_similarity": (
-                        "유클리드"
-                    ),
-                    "jaccard_similarity": (
-                        "자카드"
-                    ),
-                    "combined_similarity": (
-                        "통합"
-                    ),
-                }
-            )
-            .set_index("title")
-        )
-
-        st.bar_chart(
-            multi_method_chart
-        )
-
-        first_video_id = str(
-            shown_recommendations.iloc[
-                0
-            ]["video_id"]
-        )
-
-        candidate_lookup = (
+        similarity_column_map = (
             recommendation_result[
-                "candidate_lookup"
+                "similarity_column_map"
             ]
         )
 
-        first_candidate = (
-            candidate_lookup[
-                first_video_id
-            ]
+        (
+            absolute_column,
+            relative_column,
+            relative_percent_column,
+        ) = similarity_column_map[method_key]
+
+        maximum_similarity = (
+            recommendation_result[
+                "maximum_similarity_map"
+            ][method_key]
         )
 
-        pair_tfidf_df = (
-            create_pair_tfidf_table(
-                source_details=(
-                    st.session_state[
-                        "source_details"
-                    ]
-                ),
-                tfidf_result=(
-                    st.session_state[
-                        "tfidf_result"
-                    ]
-                ),
-                candidate=(
-                    first_candidate
-                ),
-            )
+        recommendations = (
+            recommendation_result[
+                "recommendations_by_method"
+            ][method_key]
         )
 
         st.subheader(
-            "추천 1위와 TF-IDF 비교"
+            "선택한 방식: " + method_label
         )
 
-        st.dataframe(
-            pair_tfidf_df,
-            use_container_width=True,
-            hide_index=True,
+        summary_metric_1, summary_metric_2 = (
+            st.columns(2)
         )
 
-        download_1, download_2, download_3 = (
-            st.columns(3)
+        summary_metric_1.metric(
+            "최고 원본 유사도",
+            format(
+                maximum_similarity,
+                ".4f summary_metric_2.metric(
+            "상대 추천 기준",
+            format(
+                RELATIVE_MINIMUM_SIMILARITY
+                * 100,
+                ".0f",
+            )
+            + "%",
         )
 
-        with download_1:
-            st.download_button(
-                "추천 결과 CSV",
-                data=to_csv_bytes(
-                    recommendations
-                ),
-                file_name=(
-                    method_key
-                    + "_recommendations.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
+        if (
+            maximum_similarity
+            < LOW_QUALITY_WARNING
+        ):
+            st.warning(
+                "후보 전체의 원본 유사도가 낮습니다. "
+                "상대 점수는 후보들 사이의 순위이지, "
+                "절대적으로 관련성이 높다는 뜻은 아닙니다."
             )
 
-        with download_2:
-            st.download_button(
-                "전체 후보 CSV",
-                data=to_csv_bytes(
-                    recommendation_result[
-                        "all_results"
+        if recommendations.empty:
+            st.warning(
+                "유사도가 0보다 큰 "
+                "후보를 찾지 못했습니다."
+            )
+
+        else:
+            shown_recommendations = (
+                recommendations.head(
+                    recommendation_count
+                )
+            )
+
+            for rank, row_tuple in enumerate(
+                shown_recommendations.itertuples(
+                    index=False
+                ),
+                start=1,
+            ):
+                row = row_tuple._asdict()
+
+                st.markdown("---")
+
+                image_column, result_column = (
+                    st.columns([1, 3])
+                )
+
+                with image_column:
+                    if row["thumbnail"]:
+                        st.image(
+                            row["thumbnail"],
+                            use_container_width=True,
+                        )
+
+                with result_column:
+                    st.markdown(
+                        "### "
+                        + str(rank)
+                        + ". ["
+                        + row["title"]
+                        + "]("
+                        + row["url"]
+                        + ")"
+                    )
+
+                    st.write(
+                        "채널: "
+                        + row["channel_title"]
+                    )
+
+                    score_column_1, score_column_2 = (
+                        st.columns(2)
+                    )
+
+                    score_column_1.metric(
+                        method_label + " (원본)",
+                        format(
+                            row[absolute_column],
+                            ".4f",
+                        ),
+                    )
+
+                    score_column_2.metric(
+                        method_label + " (상대)",
+                        format(
+                            row[
+                                relative_percent_column
+                            ],
+                            ".1f",
+                        )
+                        + "%",
+                    )
+
+                    with st.expander(
+                        "다른 유사도 방식 비교 보기"
+                    ):
+                        (
+                            compare_col_1,
+                            compare_col_2,
+                            compare_col_3,
+                            compare_col_4,
+                        ) = st.columns(4)
+
+                        compare_col_1.metric(
+                            "코사인",
+                            format(
+                                row[
+                                    "cosine_similarity"
+                                ],
+                                ".4f",
+                            ),
+                        )
+
+                        compare_col_2.metric(
+                            "유클리드",
+                            format(
+                                row[
+                                    "euclidean_similarity"
+                                ],
+                                ".4f",
+                            ),
+                        )
+
+                        compare_col_3.metric(
+                            "자카드",
+                            format(
+                                row[
+                                    "jaccard_similarity"
+                                ],
+                                ".4f",
+                            ),
+                        )
+
+                        compare_col_4.metric(
+                            "통합",
+                            format(
+                                row[
+                                    "combined_similarity"
+                                ],
+                                ".4f",
+                            ),
+                        )
+
+                    progress_value = float(
+                        row[relative_column]
+                    )
+
+                    progress_value = max(
+                        0.0,
+                        min(
+                            progress_value,
+                            1.0,
+                        ),
+                    )
+
+                    st.progress(
+                        progress_value
+                    )
+
+                    with st.expander(
+                        "💡 이 영상이 추천된 이유"
+                    ):
+                        candidate = recommendation_result[
+                            "candidate_lookup"
+                        ][str(row["video_id"])]
+
+                        reason = explain_recommendation(
+                            source_details=st.session_state.source_details,
+                            tfidf_result=st.session_state.tfidf_result,
+                            candidate=candidate,
+                            recommendation_row=row,
+                            method_key=method_key,
+                            recommendation_result=recommendation_result,
+                        )
+
+                        st.markdown("**공통 핵심 키워드**")
+
+                        if reason["common_keywords"]:
+                            st.write(
+                                ", ".join(reason["common_keywords"])
+                            )
+                        else:
+                            st.write(
+                                "제목 및 설명에서 공통 토큰을 찾지 못했습니다. "
+                                "점수와 원문을 추가로 확인해 주세요."
+                            )
+
+                        st.markdown("**유사도 방식별 점수**")
+
+                        score_cols = st.columns(4)
+
+                        for col, method in zip(
+                            score_cols,
+                            ["cosine", "euclidean", "jaccard", "combined"],
+                        ):
+                            col.metric(
+                                reason["method_labels"][method],
+                                f'{reason["scores"][method]:.4f}',
+                                help="원본 유사도 점수이며 상대 점수가 아닙니다.",
+                            )
+
+                        st.markdown("**다른 방식에서의 순위**")
+
+                        rank_text = " · ".join(
+                            (
+                                f"{SIMILARITY_METHODS[m]}: {rank2}위"
+                                if rank2 is not None
+                                else f"{SIMILARITY_METHODS[m]}: 순위 없음"
+                            )
+                            for m, rank2 in reason["rank_positions"].items()
+                        )
+
+                        st.write(rank_text)
+
+                        st.caption(
+                            "추천 근거는 현재 수집된 제목·설명·추출 키워드와 "
+                            "유사도 점수를 기반으로 계산됩니다. "
+                            "공통 키워드가 적더라도 표현이 다르거나 "
+                            "설명이 짧으면 유사도가 낮게 나타날 수 있습니다."
+                        )
+
+                    st.write(
+                        "조회수: "
+                        + format(int(row["views"]), ",")
+                        + " | 좋아요: "
+                        + format(int(row["likes"]), ",")
+                    )
+
+            st.subheader(
+                method_label + " 비교"
+            )
+
+            relative_chart = (
+                shown_recommendations[
+                    [
+                        "title",
+                        relative_column,
                     ]
-                ),
-                file_name=(
-                    "all_candidate_scores.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
+                ]
+                .set_index("title")
             )
 
-        with download_3:
-            st.download_button(
-                "Orange3 TF-IDF CSV",
-                data=to_csv_bytes(
-                    recommendation_result[
-                        "orange_df"
+            st.bar_chart(
+                relative_chart
+            )
+
+            st.subheader(
+                method_label + " (원본값) 비교"
+            )
+
+            absolute_chart = (
+                shown_recommendations[
+                    [
+                        "title",
+                        absolute_column,
                     ]
-                ),
-                file_name=(
-                    "orange_candidate_tfidf.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
+                ]
+                .set_index("title")
             )
 
+            st.bar_chart(
+                absolute_chart
+            )
+
+            st.subheader(
+                "4가지 유사도 방식 종합 비교 "
+                "(상위 추천 기준)"
+            )
+
+            multi_methodations[
+                    [
+                        "title",
+                        "cosine_similarity",
+                        "euclidean_similarity",
+                        "jaccard_similarity",
+                        "combined_similarity",
+                    ]
+                ]
+                .rename(
+                    columns={
+                        "cosine_similarity": (
+                            "코사인"
+                        ),
+                        "euclidean_similarity": (
+                            "유클리드"
+                        ),
+                        "jaccard_similarity": (
+                            "자카드"
+                        ),
+                        "combined_similarity": (
+                            "통합"
+                        ),
+                    }
+                )
+                .set_index("title")
+            )
+
+            st.bar_chart(
+                multi_method_chart
+            )
+
+            first_video_id = str(
+                shown_recommendations.iloc[
+                    0
+                ]["video_id"]
+            )
+
+            candidate_lookup = (
+                recommendation_result[
+                    "candidate_lookup"
+                ]
+            )
+
+            first_candidate = (
+                candidate_lookup[
+                    first_video_id
+                ]
+            )
+
+            pair_tfidf_df = (
+                create_pair_tfidf_table(
+                    source_details=(
+                        st.session_state[
+                            "source_details"
+                        ]
+                    ),
+                    tfidf_result=(
+                        st.session_state[
+                            "tfidf_result"
+                        ]
+                    ),
+                    candidate=(
+                        first_candidate
+                    ),
+                )
+            )
+
+            st.subheader(
+                "추천 1위와 TF-IDF 비교"
+            )
+
+            st.dataframe(
+                pair_tfidf_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            download_1, download_2, download_3 = (
+                st.columns(3)
+            )
+
+            with download_1:
+                st.download_button(
+                    "추천 결과 CSV",
+                    data=to_csv_bytes(
+                        recommendations
+                    ),
+                    file_name=(
+                        method_key
+                        + "_recommendations.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            with download_2:
+                st.download_button(
+                    "전체 후보 CSV",
+                    data=to_csv_bytes(
+                        recommendation_result[
+                            "all_results"
+                        ]
+                    ),
+                    file_name=(
+                        "all_candidate_scores.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            with download_3:
+                st.download_button(
+                    "Orange3 TF-IDF CSV",
+                    data=to_csv_bytes(
+                        recommendation_result[
+                            "orange_df"
+                        ]
+                    ),
+                    file_name=(
+                        "orange_candidate_tfidf.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True,
+                )
