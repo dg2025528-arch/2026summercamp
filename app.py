@@ -1305,7 +1305,7 @@ if not st.session_state.entered:
                     "TXT, SRT, VTT 자막 파일", type=["txt", "srt", "vtt"]
                 )
             go = st.form_submit_button(
-                "🚀 입장하기", type="primary", use_container_width=True
+                "분석하기", type="primary", use_container_width=True
             )
 
         if go:
