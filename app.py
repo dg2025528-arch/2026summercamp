@@ -834,7 +834,7 @@ def explain_recommendation(
     else:
         reasons.append("공통 핵심어는 적지만 전체 단어 분포가 일부 비슷합니다.")
 
-       reasons.append(
+    reasons.append(
         f"{SIMILARITY_METHODS[method_key]} 점수 {scores[method_key]:.4f}, "
         f"후보 {len(all_results)}개 중 {rank_positions[method_key]}위입니다."
     )
