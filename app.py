@@ -611,11 +611,10 @@ def search_candidates(search_query, api_key, maximum_results):
 
 
 # =========================================================
-# 10. 개별 유사도 함수 + 헬퍼
+# 10. 유사도 함수 + 권장 방식 판단
 # =========================================================
 
 def calculate_jaccard_similarity(source_text, candidate_texts):
-    """J(A, B) = |A ∩ B| / |A ∪ B|"""
     source_tokens = set(tokenize_mixed_text(source_text))
 
     similarities = []
@@ -633,7 +632,6 @@ def calculate_jaccard_similarity(source_text, candidate_texts):
 
 
 def convert_distance_to_similarity(distances):
-    """similarity = 1 / (1 + distance)"""
     return 1.0 / (1.0 + np.asarray(distances, dtype=float))
 
 
@@ -645,16 +643,11 @@ def build_source_comparison_text(source_details, tfidf_result):
     return clean_text(
         " ".join([source_details["title"]] * 3)
         + " " + tfidf_result["extractive_summary"]
-        + " " + " ".join(tfidf_result["keywords"][:15])
+        + " " + " ".join(tfidf_result["keywords"])
     )
 
 
-# =========================================================
-# 10-1. 데이터별 권장 유사도 판단
-# =========================================================
-
 def recommend_similarity_method(source_text, candidate_texts):
-    """이번 데이터의 길이 특성을 보고 권장 유사도와 이유를 반환합니다."""
     source_n = len(tokenize_mixed_text(source_text))
     cand_ns = [len(tokenize_mixed_text(t)) for t in candidate_texts] or [0]
     median_n = float(np.median(cand_ns))
@@ -670,22 +663,19 @@ def recommend_similarity_method(source_text, candidate_texts):
         best = "cosine"
         reason = (
             f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 길이 차이가 "
-            "큽니다. 자카드는 합집합이 커져 점수가 눌리므로 길이에 둔감한 "
-            "코사인을 권장합니다."
+            "큽니다. 자카드는 합집합이 커져 점수가 눌리므로 코사인을 권장합니다."
         )
     elif median_n < 30 and source_n < 60:
         best = "jaccard"
         reason = (
             f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 모두 짧습니다. "
-            "짧은 글은 TF-IDF 가중치가 불안정하므로 자카드를 우선하고 "
-            "코사인으로 교차 확인하세요."
+            "짧은 글은 TF-IDF 가중치가 불안정하므로 자카드를 우선하세요."
         )
     else:
         best = "cosine"
         reason = (
             f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 길이가 비슷한 "
-            "중간 길이 텍스트입니다. 핵심어 가중치를 반영하는 코사인을 "
-            "기본으로 권장합니다."
+            "중간 길이 텍스트라 코사인을 기본으로 권장합니다."
         )
 
     return {
@@ -695,10 +685,6 @@ def recommend_similarity_method(source_text, candidate_texts):
         "candidate_median_tokens": median_n,
     }
 
-
-# =========================================================
-# 10-2. 유사도 계산
-# =========================================================
 
 def calculate_relative_recommendations(source_details, tfidf_result, candidates):
     if not candidates:
@@ -759,9 +745,6 @@ def calculate_relative_recommendations(source_details, tfidf_result, candidates)
         if filtered.empty and maximum_similarity_map[key] > 0:
             best_index = all_results_df[abs_col].idxmax()
             filtered = all_results_df.loc[[best_index]].copy()
-            filtered["best_candidate_only"] = True
-        else:
-            filtered["best_candidate_only"] = False
 
         return filtered.sort_values(abs_col, ascending=False).reset_index(drop=True)
 
@@ -774,7 +757,6 @@ def calculate_relative_recommendations(source_details, tfidf_result, candidates)
         + re.sub(r"[^가-힣A-Za-z0-9_]+", "_", str(name))
         for i, name in enumerate(vectorizer.get_feature_names_out())
     ]
-
     candidate_feature_df = pd.DataFrame(
         candidate_vectors.toarray(), columns=feature_columns
     )
@@ -807,44 +789,8 @@ def calculate_relative_recommendations(source_details, tfidf_result, candidates)
 
 
 # =========================================================
-# 11. 방식 비교 + 추천 이유
+# 11. 추천 이유 + 보조 함수
 # =========================================================
-
-def compare_similarity_methods(recommendation_result, top_k=5):
-    """방식별 상위권 일치도 비교. 정답 데이터가 없으므로 참고용입니다."""
-    method_map = recommendation_result["similarity_column_map"]
-    all_results = recommendation_result["all_results"]
-    keys = list(method_map.keys())
-
-    top_ids = {
-        key: all_results.sort_values(method_map[key][0], ascending=False)
-        .head(top_k)["video_id"].tolist()
-        for key in keys
-    }
-
-    rows = []
-    for key in keys:
-        col = method_map[key][0]
-        ranked = all_results.sort_values(col, ascending=False)
-
-        overlaps = []
-        for other in keys:
-            if other == key:
-                continue
-            a, b = set(top_ids[key]), set(top_ids[other])
-            overlaps.append(len(a & b) / len(a | b) if (a | b) else 0.0)
-
-        rows.append({
-            "유사도 방식": SIMILARITY_METHODS[key],
-            "1위 영상": ranked.iloc[0]["title"] if len(ranked) else "",
-            f"상위 {top_k}개 평균 점수": round(
-                float(ranked[col].head(top_k).mean()), 4
-            ),
-            "다른 방식과의 상위권 일치도": round(float(np.mean(overlaps)), 3),
-        })
-
-    return pd.DataFrame(rows), top_ids
-
 
 def explain_recommendation(
     source_details,
@@ -854,7 +800,6 @@ def explain_recommendation(
     method_key,
     recommendation_result,
 ):
-    """공통 키워드, 점수, 순위, 데이터 특성을 묶어 추천 이유를 만듭니다."""
     source_tokens = set(
         tokenize_mixed_text(recommendation_result["source_comparison_text"])
     )
@@ -864,6 +809,7 @@ def explain_recommendation(
     prioritized = [w for w in tfidf_result["keywords"] if w in common]
     if not prioritized:
         prioritized = sorted(common, key=len, reverse=True)
+    prioritized = prioritized[:MAX_KEYWORDS]
 
     scores = {
         key: recommendation_row[f"{key}_similarity"]
@@ -884,7 +830,8 @@ def explain_recommendation(
 
     if prioritized:
         reasons.append(
-            f"입력 영상의 핵심어 {len(prioritized)}개가 이 영상의 제목·설명에도 나옵니다."
+            f"입력 영상의 핵심어가 이 영상의 제목·설명에도 나옵니다: "
+            + ", ".join(prioritized)
         )
     else:
         reasons.append("공통 핵심어는 적지만 전체 단어 분포가 일부 비슷합니다.")
@@ -896,9 +843,9 @@ def explain_recommendation(
 
     ranks = [r for r in rank_positions.values() if r is not None]
     if ranks and max(ranks) <= 3:
-        reasons.append("모든 유사도 방식에서 상위 3위 안이라 방식과 무관하게 일관된 추천입니다.")
+        reasons.append("세 가지 유사도 모두 상위 3위 안이라 일관된 추천입니다.")
     elif ranks and max(ranks) - min(ranks) >= 5:
-        reasons.append("방식에 따라 순위 차이가 커서 한 가지 기준에만 의존한 추천일 수 있습니다.")
+        reasons.append("방식별 순위 차이가 커서 한 기준에만 의존한 추천일 수 있습니다.")
 
     if method_key != advice["best"]:
         reasons.append(
@@ -915,7 +862,7 @@ def explain_recommendation(
         reasons.append("입력 영상과 같은 채널입니다.")
 
     return {
-        "common_keywords": prioritized[:8],
+        "common_keywords": prioritized,
         "scores": scores,
         "rank_positions": rank_positions,
         "reasons": reasons,
@@ -937,7 +884,6 @@ def create_pair_tfidf_table(source_details, tfidf_result, candidate):
     )
 
     matrix = vectorizer.fit_transform([source_text, candidate["comparison_text"]])
-
     source_values = matrix[0].toarray().ravel()
     candidate_values = matrix[1].toarray().ravel()
 
@@ -957,7 +903,8 @@ def to_csv_bytes(dataframe):
 
 
 # =========================================================
-# 12. AI 요약
+# 12. AI 요약  ★ 원래 쓰던 generate_ai_summary가 있으면
+#     이 함수만 그걸로 교체하세요. (반환 형식 유지 필수)
 # =========================================================
 
 def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key):
@@ -983,7 +930,7 @@ def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key)
                     "content": (
                         f"제목: {video_title}\n\n"
                         f"핵심 문장:\n{extractive_summary}\n\n"
-                        f"핵심 키워드: {', '.join(keywords[:15])}\n\n"
+                        f"핵심 키워드: {', '.join(keywords)}\n\n"
                         "위 내용만 근거로 문장을 복사하지 말고 3~5문장으로 요약하고, "
                         "그 아래에 '주요 포인트'를 불릿 5개 이내로 정리해줘."
                     ),
@@ -1063,8 +1010,6 @@ def perform_tfidf_analysis(
     st.session_state.tfidf_result = tfidf_result
 
     return video_id, video_details, tfidf_result
-
-
 # =========================================================
 # 14. 스타일 + 상단
 # =========================================================
