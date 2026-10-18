@@ -1046,18 +1046,20 @@ st.markdown(
             background:#e8f5e9; color:#1b5e20; font-weight:600;
             font-size:.85rem;}
 
-    /* 사이드바 설정 버튼 크게 */
+      /* 사이드바 설정 버튼 크게 */
     [data-testid="stSidebar"] .stButton button {
-        height: 3.2rem; font-size: 1.15rem; font-weight: 700;
+        height: 4rem; font-size: 1.4rem; font-weight: 800;
     }
     /* 사이드바 메뉴(라디오)를 큰 버튼처럼 */
-    [data-testid="stSidebar"] div[role="radiogroup"] {gap: .6rem;}
+    [data-testid="stSidebar"] div[role="radiogroup"] {gap: 1rem;}
     [data-testid="stSidebar"] div[role="radiogroup"] > label {
-        width: 100%; padding: 1rem 1.1rem; border-radius: 12px;
-        border: 1px solid #d0d4dc; background: #f7f8fa; cursor: pointer;
+        width: 100%; min-height: 4.5rem; padding: 1.2rem 1.3rem;
+        border-radius: 14px; border: 2px solid #d0d4dc;
+        background: #f7f8fa; cursor: pointer; align-items: center;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] > label p {
-        font-size: 1.2rem; font-weight: 700; margin: 0;
+        font-size: 1.6rem !important; font-weight: 800; margin: 0;
+        line-height: 1.2;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
         background: #ffe9e9; border-color: #ff4b4b;
