@@ -1011,7 +1011,7 @@ def perform_tfidf_analysis(
 
     return video_id, video_details, tfidf_result
 # =========================================================
-# 14. 스타일 + 상단
+# 14. 스타일 + 상단 배너
 # =========================================================
 
 st.markdown(
@@ -1032,58 +1032,75 @@ st.markdown(
     </style>
     <div class="hero">
       <h1>🎬 YouTube 요약 · 유사 영상 추천</h1>
-      <p>TF-IDF로 핵심을 뽑고, 데이터에 맞는 유사도로 비슷한 영상을 찾아 이유까지 설명합니다.</p>
+      <p>TF-IDF로 핵심을 뽑고, 코사인·유클리드·자카드로 비슷한 영상을 찾아 이유까지 설명합니다.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-with st.expander("분석 원리"):
-    st.markdown(
-        r"""
-**TF-IDF**: $TFIDF(t,d)=TF(t,d)\times IDF(t)$ — 자막에서 핵심 문장과 키워드를 추출합니다.
-
-**AI 요약(Groq/Llama)**: 추출한 핵심 문장과 키워드를 바탕으로 자연스러운 설명으로 다시 씁니다.
-
-**코사인**: $\frac{A\cdot B}{\|A\|\|B\|}$ — 벡터 방향만 비교하므로 길이 차이에 둔감합니다.
-
-**유클리드**: $\frac{1}{1+\|A-B\|}$ — TF-IDF 벡터가 L2 정규화되어 있어 코사인과 순위가 같습니다. 참고용입니다.
-
-**자카드**: $\frac{|A\cap B|}{|A\cup B|}$ — 단어 존재 여부만 비교합니다. 짧은 텍스트끼리 비교할 때 유리합니다.
-
-**상대 유사도**: 후보 중 최고점을 100%로 두고, 30% 이상인 후보를 추천합니다.
-        """
-    )
-
 
 # =========================================================
-# 15. 사이드바 / 입력 / 버튼
+# 15. 좌측 사이드바: ⚙️ 설정 버튼 + 메뉴
 # =========================================================
+
+if "settings" not in st.session_state:
+    st.session_state.settings = {
+        "sentence_count": 5,
+        "candidate_count": 20,
+        "recommendation_count": 5,
+    }
+
+if "show_settings" not in st.session_state:
+    st.session_state.show_settings = False
 
 with st.sidebar:
-    st.header("⚙️ 설정")
+    if st.button("⚙️ 설정", use_container_width=True):
+        st.session_state.show_settings = not st.session_state.show_settings
 
-    summary_sentence_count = st.slider("요약 문장 수", 3, 10, 5)
-    candidate_count = st.slider("후보 영상 수", 5, 50, 20, step=5)
-    recommendation_count = st.slider("표시할 추천 수", 1, 10, 5)
+    if st.session_state.show_settings:
+        with st.form("settings_form"):
+            current = st.session_state.settings
+            new_sentence = st.slider("요약 문장 수", 3, 10, current["sentence_count"])
+            new_candidate = st.slider(
+                "후보 영상 수", 5, 50, current["candidate_count"], step=5
+            )
+            new_recommend = st.slider(
+                "표시할 추천 수", 1, 10, current["recommendation_count"]
+            )
+            if st.form_submit_button("적용", use_container_width=True):
+                st.session_state.settings = {
+                    "sentence_count": new_sentence,
+                    "candidate_count": new_candidate,
+                    "recommendation_count": new_recommend,
+                }
+                st.session_state.show_settings = False
+                st.rerun()
 
     st.divider()
 
-    method_choice = st.radio(
-        "순위 기준 유사도",
-        options=["auto"] + list(SIMILARITY_METHODS.keys()),
-        format_func=lambda k: (
-            "자동 (데이터별 권장)" if k == "auto" else SIMILARITY_METHODS[k]
-        ),
-        index=0,
+    page = st.radio(
+        "메뉴",
+        ["📝 요약", "📊 TF-IDF", "🎯 유사도"],
+        label_visibility="collapsed",
     )
 
-    st.info(
+    st.divider()
+    st.caption(
         "추천 기준\n\n"
         "- 절대 유사도 0.001 이상\n"
         "- 최고 후보 대비 30% 이상\n"
         "- 최고 후보는 항상 표시"
     )
+
+settings = st.session_state.settings
+summary_sentence_count = settings["sentence_count"]
+candidate_count = settings["candidate_count"]
+recommendation_count = settings["recommendation_count"]
+
+
+# =========================================================
+# 16. 입력 + 버튼 실행
+# =========================================================
 
 api_key = get_api_key()
 groq_api_key = get_groq_api_key()
@@ -1107,22 +1124,15 @@ custom_search_query = st.text_input(
 with st.expander("자막 직접 입력 또는 업로드"):
     manual_transcript = st.text_area("자막 직접 입력", height=150)
     uploaded_subtitle = st.file_uploader(
-        "TXT, SRT, VTT 자막 파일",
-        type=["txt", "srt", "vtt"],
+        "TXT, SRT, VTT 자막 파일", type=["txt", "srt", "vtt"]
     )
 
-button_col_1, button_col_2 = st.columns(2)
-
-analysis_button = button_col_1.button(
-    "📊 요약 · TF-IDF 분석",
-    type="primary",
-    use_container_width=True,
+col_b1, col_b2, col_b3 = st.columns(3)
+summary_button = col_b1.button("🤖 영상 요약", use_container_width=True)
+tfidf_button = col_b2.button(
+    "📊 TF-IDF 분석", type="primary", use_container_width=True
 )
-
-recommendation_button = button_col_2.button(
-    "🎯 유사도 추천 (분석 포함)",
-    use_container_width=True,
-)
+recommendation_button = col_b3.button("🎯 유사도 추천", use_container_width=True)
 
 
 def show_error(title, error):
@@ -1144,7 +1154,7 @@ def run_analysis():
     )
 
 
-if analysis_button:
+if summary_button or tfidf_button:
     if not api_key:
         st.error("API 키를 먼저 설정하세요.")
     else:
@@ -1153,7 +1163,7 @@ if analysis_button:
                 run_analysis()
             st.session_state.recommendation_result = None
             st.session_state.search_query = ""
-            st.success("분석 완료")
+            st.success("분석 완료 — 왼쪽 메뉴에서 결과를 확인하세요.")
         except Exception as error:
             show_error("분석 실패", error)
 
@@ -1166,16 +1176,15 @@ if recommendation_button:
                 source_video_id, new_details, new_tfidf = run_analysis()
 
             search_query = build_search_query(
-                new_details["title"],
-                new_tfidf["keywords"],
-                custom_search_query,
+                new_details["title"], new_tfidf["keywords"], custom_search_query
             )
             if not search_query:
                 raise ValueError("후보 검색어를 만들지 못했습니다.")
 
             with st.spinner("후보 검색 및 유사도 계산 중..."):
                 candidates = [
-                    c for c in search_candidates(search_query, api_key, candidate_count)
+                    c
+                    for c in search_candidates(search_query, api_key, candidate_count)
                     if c["video_id"] != source_video_id
                 ]
                 st.session_state.recommendation_result = (
@@ -1185,13 +1194,13 @@ if recommendation_button:
                 )
 
             st.session_state.search_query = search_query
-            st.success("유사도 추천 완료")
+            st.success("유사도 추천 완료 — 🎯 유사도 메뉴에서 확인하세요.")
         except Exception as error:
             show_error("추천 실행 실패", error)
 
 
 # =========================================================
-# 16. 결과 준비
+# 17. 페이지 렌더링
 # =========================================================
 
 source_details = st.session_state.source_details
@@ -1199,27 +1208,137 @@ tfidf_result = st.session_state.tfidf_result
 recommendation_result = st.session_state.recommendation_result
 
 if source_details is None or tfidf_result is None:
-    st.info("URL을 입력하고 **요약 · TF-IDF 분석** 또는 **유사도 추천**을 눌러주세요.")
+    st.info("URL을 입력하고 위의 버튼을 눌러주세요.")
     st.stop()
 
-if recommendation_result is not None:
+st.divider()
+
+
+def render_method_tab(key):
+    """유사도 한 종류(코사인/유클리드/자카드)의 결과 화면."""
+    label = SIMILARITY_METHODS[key]
+    guide = METHOD_GUIDE[key]
     advice = recommendation_result["method_advice"]
-    active_method = advice["best"] if method_choice == "auto" else method_choice
-else:
-    advice = None
-    active_method = None
+
+    if advice["best"] == key:
+        st.markdown(
+            "<span class='badge'>✅ 이번 데이터에 권장</span>",
+            unsafe_allow_html=True,
+        )
+        st.caption(advice["reason"])
+    else:
+        st.caption(
+            f"이번 데이터에는 {SIMILARITY_METHODS[advice['best']]}가 권장됩니다."
+        )
+
+    with st.expander(f"📐 {label}는 어떤 데이터에 좋은가"):
+        st.markdown("- **적합한 데이터**: " + guide["best_for"])
+        st.markdown("- **이유**: " + guide["why"])
+        st.markdown("- **주의점**: " + guide["weak"])
+
+    abs_col, rel_col, pct_col = recommendation_result["similarity_column_map"][key]
+    maximum = recommendation_result["maximum_similarity_map"][key]
+    recommendations = recommendation_result["recommendations_by_method"][key]
+
+    k1, k2 = st.columns(2)
+    k1.metric("최고 원본 유사도", f"{maximum:.4f}")
+    k2.metric("상대 추천 기준", f"{RELATIVE_MINIMUM_SIMILARITY * 100:.0f}%")
+
+    if maximum < LOW_QUALITY_WARNING:
+        st.warning(
+            "후보 전체의 원본 유사도가 낮습니다. "
+            "상대 점수는 후보 간 순위일 뿐 절대적 관련성이 아닙니다."
+        )
+
+    if recommendations.empty:
+        st.warning("유사도가 0보다 큰 후보를 찾지 못했습니다.")
+        return
+
+    shown = recommendations.head(recommendation_count)
+
+    for rank, row_tuple in enumerate(shown.itertuples(index=False), start=1):
+        row = row_tuple._asdict()
+
+        with st.container(border=True):
+            img_col, info_col = st.columns([1, 3])
+
+            with img_col:
+                if row["thumbnail"]:
+                    st.image(row["thumbnail"], use_container_width=True)
+
+            with info_col:
+                st.markdown(f"### {rank}. [{row['title']}]({row['url']})")
+                st.caption(
+                    f"{row['channel_title']} · 조회수 {int(row['views']):,}"
+                    f" · 좋아요 {int(row['likes']):,}"
+                )
+                s1, s2 = st.columns(2)
+                s1.metric(label + " (원본)", f"{row[abs_col]:.4f}")
+                s2.metric(label + " (상대)", f"{row[pct_col]:.1f}%")
+                st.progress(max(0.0, min(float(row[rel_col]), 1.0)))
+
+            candidate = recommendation_result["candidate_lookup"][str(row["video_id"])]
+            reason = explain_recommendation(
+                source_details, tfidf_result, candidate,
+                row, key, recommendation_result,
+            )
+
+            with st.expander("💡 이 영상이 추천된 이유", expanded=(rank <= 2)):
+                for line in reason["reasons"]:
+                    st.markdown("- " + line)
+
+                if reason["common_keywords"]:
+                    st.markdown(
+                        "".join(
+                            f"<span class='chip'>{w}</span>"
+                            for w in reason["common_keywords"]
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                for col, other in zip(st.columns(3), SIMILARITY_METHODS):
+                    rp = reason["rank_positions"][other]
+                    col.metric(
+                        SIMILARITY_METHODS[other],
+                        f"{reason['scores'][other]:.4f}",
+                        f"{rp}위" if rp else "순위 없음",
+                        delta_color="off",
+                    )
+
+    st.subheader(f"{label} 점수 비교")
+    st.bar_chart(shown[["title", abs_col]].set_index("title"))
+
+    first_candidate = recommendation_result["candidate_lookup"][
+        str(shown.iloc[0]["video_id"])
+    ]
+    with st.expander("추천 1위와 TF-IDF 비교"):
+        st.dataframe(
+            create_pair_tfidf_table(source_details, tfidf_result, first_candidate),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    d1, d2 = st.columns(2)
+    d1.download_button(
+        "추천 결과 CSV",
+        to_csv_bytes(recommendations),
+        f"{key}_recommendations.csv",
+        "text/csv",
+        use_container_width=True,
+        key=f"dl_rec_{key}",
+    )
+    d2.download_button(
+        "Orange3 TF-IDF CSV",
+        to_csv_bytes(recommendation_result["orange_df"]),
+        "orange_candidate_tfidf.csv",
+        "text/csv",
+        use_container_width=True,
+        key=f"dl_orange_{key}",
+    )
 
 
-# =========================================================
-# 17. 결과 탭
-# =========================================================
-
-tab_dashboard, tab_tfidf, tab_compare, tab_recommend, tab_export = st.tabs(
-    ["📌 대시보드", "📊 TF-IDF 분석", "🔬 유사도 비교·가이드", "🎯 추천 영상", "📥 내보내기"]
-)
-
-# ---------- 대시보드 ----------
-with tab_dashboard:
+# ---------- 📝 요약 ----------
+if page == "📝 요약":
     left, right = st.columns([1, 2])
 
     with left:
@@ -1232,44 +1351,46 @@ with tab_dashboard:
             + " · 분석 데이터: "
             + st.session_state.source_label
         )
-
         m1, m2, m3 = st.columns(3)
         m1.metric("조회수", f"{source_details['views']:,}")
         m2.metric("좋아요", f"{source_details['likes']:,}")
         m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
 
-    st.subheader("핵심 요약")
+    st.subheader("핵심 내용 요약")
 
     ai = tfidf_result.get("ai_summary_result", {"success": False})
 
     if ai.get("success"):
         st.write(ai["text"])
-        st.caption("✨ AI가 핵심 문장을 바탕으로 재구성한 설명입니다.")
+        st.caption("✨ AI가 핵심 문장을 바탕으로 자연스럽게 재구성한 설명입니다.")
     else:
         st.write(tfidf_result["extractive_summary"])
-        st.caption(
-            "⚠️ AI 요약을 사용할 수 없어 추출 문장을 표시합니다. (사유: "
-            + ai.get("error_type", "알 수 없음")
-            + ")"
-        )
+        st.warning("AI 요약을 사용할 수 없어 자막에서 추출한 문장을 표시했습니다.")
+        st.write("오류 유형: " + ai.get("error_type", "알 수 없음"))
+        st.code(ai.get("error_message") or "오류 메시지가 없습니다.")
 
+    st.subheader("핵심어 (최대 5개)")
     st.markdown(
-        "".join(f"<span class='chip'>{k}</span>" for k in tfidf_result["keywords"][:12]),
+        "".join(
+            f"<span class='chip'>{k}</span>"
+            for k in tfidf_result["keywords"][:MAX_KEYWORDS]
+        ),
         unsafe_allow_html=True,
     )
 
-    if advice:
-        st.success(
-            f"**이번 데이터에 권장하는 유사도: {SIMILARITY_METHODS[advice['best']]}**"
-            f"\n\n{advice['reason']}"
-        )
+    with st.expander("원문 근거 문장 보기 (TF-IDF 추출 원본)"):
+        st.write(tfidf_result["extractive_summary"])
 
-# ---------- TF-IDF ----------
-with tab_tfidf:
+
+# ---------- 📊 TF-IDF ----------
+elif page == "📊 TF-IDF":
     c1, c2 = st.columns(2)
 
     with c1:
-        st.subheader("핵심 키워드")
+        st.subheader("핵심어 (최대 5개)")
+        st.dataframe(
+            tfidf_result["keyword_df"], use_container_width=True, hide_index=True
+        )
         st.bar_chart(
             tfidf_result["keyword_df"].set_index("단어 또는 구")["TF-IDF 점수"]
         )
@@ -1285,159 +1406,7 @@ with tab_tfidf:
     with st.expander("원문 근거 문장 (TF-IDF 추출 원본)"):
         st.write(tfidf_result["extractive_summary"])
 
-# ---------- 유사도 비교·가이드 ----------
-with tab_compare:
-    st.subheader("어떤 데이터에 어떤 유사도가 좋은가")
-
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "방법": SIMILARITY_METHODS[k],
-                    "적합한 데이터": v["best_for"],
-                    "이유": v["why"],
-                    "주의점": v["weak"],
-                }
-                for k, v in METHOD_GUIDE.items()
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    if recommendation_result is None:
-        st.info("추천을 실행하면 이번 데이터에 대한 판단과 방식별 비교가 표시됩니다.")
-    else:
-        st.subheader("이번 분석에서의 판단")
-
-        d1, d2, d3 = st.columns(3)
-        d1.metric("입력 비교 텍스트 길이", f"{advice['source_tokens']} 토큰")
-        d2.metric("후보 중앙값 길이", f"{advice['candidate_median_tokens']:.0f} 토큰")
-        d3.metric("권장 방식", SIMILARITY_METHODS[advice["best"]])
-        st.write(advice["reason"])
-
-        comparison_df, _ = compare_similarity_methods(recommendation_result, top_k=5)
-
-        st.subheader("방식별 상위권 비교")
-        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
-        st.caption(
-            "일치도는 방식끼리 얼마나 비슷한 결과를 내는지 보여주는 참고 지표이며, "
-            "높다고 추천 품질이 높다는 뜻은 아닙니다. "
-            "코사인과 유클리드는 구조상 항상 같은 순위입니다."
-        )
-
-# ---------- 추천 영상 ----------
-with tab_recommend:
-    if recommendation_result is None:
-        st.info("🎯 유사도 추천 버튼을 눌러주세요.")
-    else:
-        st.write("사용한 검색어: `" + st.session_state.search_query + "`")
-
-        label = SIMILARITY_METHODS[active_method]
-        abs_col, rel_col, pct_col = recommendation_result["similarity_column_map"][active_method]
-        maximum_similarity = recommendation_result["maximum_similarity_map"][active_method]
-        recommendations = recommendation_result["recommendations_by_method"][active_method]
-
-        st.markdown(
-            f"순위 기준: <span class='badge'>{label}</span>"
-            + (" (자동 선택)" if method_choice == "auto" else " (직접 선택)"),
-            unsafe_allow_html=True,
-        )
-
-        if method_choice != "auto" and active_method != advice["best"]:
-            st.warning(f"이번 데이터에는 {SIMILARITY_METHODS[advice['best']]}가 권장됩니다.")
-
-        k1, k2 = st.columns(2)
-        k1.metric("최고 원본 유사도", f"{maximum_similarity:.4f}")
-        k2.metric("상대 추천 기준", f"{RELATIVE_MINIMUM_SIMILARITY * 100:.0f}%")
-
-        if maximum_similarity < LOW_QUALITY_WARNING:
-            st.warning(
-                "후보 전체의 원본 유사도가 낮습니다. "
-                "상대 점수는 후보 간 순위일 뿐 절대적 관련성이 아닙니다."
-            )
-
-        if recommendations.empty:
-            st.warning("유사도가 0보다 큰 후보를 찾지 못했습니다.")
-        else:
-            shown = recommendations.head(recommendation_count)
-
-            for rank, row_tuple in enumerate(shown.itertuples(index=False), start=1):
-                row = row_tuple._asdict()
-
-                with st.container(border=True):
-                    img_col, info_col = st.columns([1, 3])
-
-                    with img_col:
-                        if row["thumbnail"]:
-                            st.image(row["thumbnail"], use_container_width=True)
-
-                    with info_col:
-                        st.markdown(f"### {rank}. [{row['title']}]({row['url']})")
-                        st.caption(
-                            f"{row['channel_title']} · 조회수 {int(row['views']):,}"
-                            f" · 좋아요 {int(row['likes']):,}"
-                        )
-
-                        s1, s2 = st.columns(2)
-                        s1.metric(label + " (원본)", f"{row[abs_col]:.4f}")
-                        s2.metric(label + " (상대)", f"{row[pct_col]:.1f}%")
-                        st.progress(max(0.0, min(float(row[rel_col]), 1.0)))
-
-                    candidate = recommendation_result["candidate_lookup"][str(row["video_id"])]
-                    reason = explain_recommendation(
-                        source_details, tfidf_result, candidate,
-                        row, active_method, recommendation_result,
-                    )
-
-                    with st.expander("💡 이 영상이 추천된 이유", expanded=(rank <= 2)):
-                        for line in reason["reasons"]:
-                            st.markdown("- " + line)
-
-                        if reason["common_keywords"]:
-                            st.markdown("**공통 핵심 키워드**")
-                            st.markdown(
-                                "".join(
-                                    f"<span class='chip'>{w}</span>"
-                                    for w in reason["common_keywords"]
-                                ),
-                                unsafe_allow_html=True,
-                            )
-
-                        for col, key in zip(st.columns(3), SIMILARITY_METHODS):
-                            rp = reason["rank_positions"][key]
-                            col.metric(
-                                SIMILARITY_METHODS[key],
-                                f"{reason['scores'][key]:.4f}",
-                                f"{rp}위" if rp else "순위 없음",
-                                delta_color="off",
-                            )
-
-            st.subheader("추천 영상 점수 비교")
-
-            score_columns = [method_columns(k)[0] for k in SIMILARITY_METHODS]
-            chart_df = (
-                shown[["title"] + score_columns]
-                .rename(columns={method_columns(k)[0]: SIMILARITY_METHODS[k]
-                                 for k in SIMILARITY_METHODS})
-                .set_index("title")
-            )
-            st.bar_chart(chart_df)
-
-            first_candidate = recommendation_result["candidate_lookup"][
-                str(shown.iloc[0]["video_id"])
-            ]
-            with st.expander("추천 1위와 TF-IDF 비교"):
-                st.dataframe(
-                    create_pair_tfidf_table(source_details, tfidf_result, first_candidate),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-# ---------- 내보내기 ----------
-with tab_export:
     e1, e2 = st.columns(2)
-
     e1.download_button(
         "키워드 CSV",
         to_csv_bytes(tfidf_result["keyword_df"]),
@@ -1453,27 +1422,26 @@ with tab_export:
         use_container_width=True,
     )
 
-    if recommendation_result is not None:
-        f1, f2, f3 = st.columns(3)
 
-        f1.download_button(
-            "추천 결과 CSV",
-            to_csv_bytes(recommendation_result["recommendations_by_method"][active_method]),
-            f"{active_method}_recommendations.csv",
-            "text/csv",
-            use_container_width=True,
+# ---------- 🎯 유사도 ----------
+else:
+    if recommendation_result is None:
+        st.info("위의 **🎯 유사도 추천** 버튼을 눌러주세요.")
+    else:
+        st.write("사용한 검색어: `" + st.session_state.search_query + "`")
+
+        advice = recommendation_result["method_advice"]
+        d1, d2, d3 = st.columns(3)
+        d1.metric("입력 비교 텍스트 길이", f"{advice['source_tokens']} 토큰")
+        d2.metric("후보 중앙값 길이", f"{advice['candidate_median_tokens']:.0f} 토큰")
+        d3.metric("권장 방식", SIMILARITY_METHODS[advice["best"]])
+
+        tab_cos, tab_euc, tab_jac = st.tabs(
+            ["코사인", "유클리드", "자카드"]
         )
-        f2.download_button(
-            "전체 후보 CSV",
-            to_csv_bytes(recommendation_result["all_results"]),
-            "all_candidate_scores.csv",
-            "text/csv",
-            use_container_width=True,
-        )
-        f3.download_button(
-            "Orange3 TF-IDF CSV",
-            to_csv_bytes(recommendation_result["orange_df"]),
-            "orange_candidate_tfidf.csv",
-            "text/csv",
-            use_container_width=True,
-        )
+        with tab_cos:
+            render_method_tab("cosine")
+        with tab_euc:
+            render_method_tab("euclidean")
+        with tab_jac:
+            render_method_tab("jaccard")
