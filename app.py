@@ -55,7 +55,7 @@ METHOD_GUIDE = {
     },
 }
 MAX_KEYWORDS = 5   # 핵심어 최대 개수
-GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+GROQ_MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # =========================================================
