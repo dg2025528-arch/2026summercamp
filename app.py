@@ -1672,28 +1672,28 @@ def explain_recommendation(
     def compare_similarity_methods(
     recommendation_result,
     top_k=5,
-):
-    """유사도별 상위 후보 일치도와 순위를 비교합니다."""
-    method_map = recommendation_result[
+    ):
+        """유사도별 상위 후보 일치도와 순위를 비교합니다."""
+        method_map = recommendation_result[
         "similarity_column_map"
-    ]
-    all_results = recommendation_result["all_results"]
+        ]
+        all_results = recommendation_result["all_results"]
 
-    method_keys = list(method_map.keys())
-    top_ids = {}
+        method_keys = list(method_map.keys())
+        top_ids = {}
 
-    for method in method_keys:
-        absolute_col, _, _ = method_map[method]
+        for method in method_keys:
+            absolute_col, _, _ = method_map[method]
 
-        ranked = all_results.sort_values(
-            absolute_col, ascending=False
-        )
+            ranked = all_results.sort_values(
+                absolute_col, ascending=False
+            )
 
-        top_ids[method] = ranked.head(top_k)[
-            "video_id"
-        ].tolist()
-
-    rows = []
+            top_ids[method] = ranked.head(top_k)[
+                "video_id"
+            ].tolist()
+    
+        rows = []
 
     for method in method_keys:
         absolute_col, _, _ = method_map[method]
