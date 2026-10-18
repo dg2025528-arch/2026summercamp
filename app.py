@@ -1046,24 +1046,46 @@ st.markdown(
             background:#e8f5e9; color:#1b5e20; font-weight:600;
             font-size:.85rem;}
 
-      /* 사이드바 설정 버튼 크게 */
+    /* ⚙️ 설정 버튼: 작게 */
     [data-testid="stSidebar"] .stButton button {
-        height: 4rem; font-size: 1.4rem; font-weight: 800;
+        height: 2.2rem; min-height: 2.2rem;
+        font-size: .95rem; font-weight: 600;
+        padding: 0 .8rem;
     }
-    /* 사이드바 메뉴(라디오)를 큰 버튼처럼 */
-    [data-testid="stSidebar"] div[role="radiogroup"] {gap: 1rem;}
+
+    /* 메뉴(라디오)를 큰 버튼형 탭으로 */
+    [data-testid="stSidebar"] div[role="radiogroup"] {
+        gap: 1.1rem; width: 100%;
+    }
     [data-testid="stSidebar"] div[role="radiogroup"] > label {
-        width: 100%; min-height: 4.5rem; padding: 1.2rem 1.3rem;
-        border-radius: 14px; border: 2px solid #d0d4dc;
-        background: #f7f8fa; cursor: pointer; align-items: center;
+        width: 100% !important;
+        min-height: 6rem;
+        padding: 1.6rem 1.2rem;
+        border-radius: 16px;
+        border: 2px solid #d0d4dc;
+        background: #f7f8fa;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all .15s ease;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        border-color: #ff4b4b; background: #fff3f3;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] > label p {
-        font-size: 1.6rem !important; font-weight: 800; margin: 0;
+        font-size: 1.7rem !important;
+        font-weight: 800;
+        margin: 0;
+        text-align: center;
         line-height: 1.2;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
-        background: #ffe9e9; border-color: #ff4b4b;
+        background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
+        border-color: transparent;
     }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
+        color: #ffffff !important;
+    }
+    /* 라디오 동그라미 숨김 */
     [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
         display: none;
     }
