@@ -439,6 +439,14 @@ def prepare_source_text(video_id, video_details, manual_transcript, uploaded_sub
 
 def analyze_tfidf(source_text, sentence_count, keyword_count=MAX_KEYWORDS):
     sentences = split_sentences(source_text)
+    need = int(sentence_count)
+    if len(sentences) < need:
+        flat = clean_text(source_text)
+        size = max(15, len(flat) // need)
+        chunks = [flat[i:i + size].strip() for i in range(0, len(flat), size)]
+        chunks = [c for c in chunks if len(c) >= 15]
+        if len(chunks) > len(sentences):
+            sentences = chunks
     if not sentences:
         raise ValueError("분석 가능한 문장을 찾지 못했습니다.")
 
@@ -1188,6 +1196,26 @@ st.markdown(
     /* 사이드바 정리 */
     [data-testid="stSidebar"] {min-width: 250px; max-width: 250px;}
     .side-title {font-size: 1.2rem; font-weight: 700; margin: .3rem 0 .6rem;}
+    
+    /* 다운로드 버튼: 흰 배경 + 검정 글씨 */
+    [data-testid="stDownloadButton"] button {
+        background: #ffffff !important;
+        border: 1px solid #999 !important;
+        border-radius: 10px;
+    }
+    [data-testid="stDownloadButton"] button p,
+    [data-testid="stDownloadButton"] button span {
+        color: #111111 !important;
+        font-weight: 500;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        background: #ffd0d0 !important;
+    }
+
+    /* 핵심어: 단어마다 따로 떨어진 칩 */
+    .chip-row {display: flex; flex-wrap: wrap; gap: 10px; margin: .4rem 0 1rem;}
+    .chip-row .chip {margin: 0; padding: 6px 16px; font-size: 1rem;
+                     background: #ffffff; border: 1px solid #888;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -1524,7 +1552,6 @@ if ai.get("success"):
         f"<div class='summary-box'><h4>📌 핵심 내용</h4><ul>{items}</ul></div>",
         unsafe_allow_html=True,
     )
-    st.caption("✨ AI가 자막 내용을 바탕으로 정리한 요약입니다.")
 else:
     st.warning("AI 요약을 사용할 수 없어 아래 핵심 문장만 표시합니다.")
     st.write("오류 유형: " + ai.get("error_type", "알 수 없음"))
@@ -1535,21 +1562,21 @@ quotes = "".join(
     f"<div class='quote-box'>“{s}”</div>"
     for s in sentence_df.sort_values("문장 번호")["문장"].tolist()
 )
-st.markdown("#### 💬 핵심 문장")
+st.markdown(
+    f"#### 💬 핵심 문장 ({len(sentence_df)}개)"
+)
 st.markdown(quotes, unsafe_allow_html=True)
 
 st.markdown("**핵심어 (최대 5개)**")
 st.markdown(
-    "".join(
+    "<div class='chip-row'>"
+    + "".join(
         f"<span class='chip'>{k}</span>"
         for k in tfidf_result["keywords"][:MAX_KEYWORDS]
-    ),
+    )
+    + "</div>",
     unsafe_allow_html=True,
 )
-with st.expander("원문 근거 문장 보기 (TF-IDF 추출 원본)"):
-    st.write(tfidf_result["extractive_summary"])
-
-
 # ---------- 📊 TF-IDF ----------
 st.markdown("<div id='sec-tfidf'></div>", unsafe_allow_html=True)
 st.markdown("<div class='section-title'>📊 TF-IDF 분석</div>", unsafe_allow_html=True)
