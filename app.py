@@ -947,7 +947,7 @@ def generate_ai_summary(video_title, extractive_summary, keywords,
         response = client.chat.completions.create(
             model=GROQ_MODEL_NAME,
             temperature=0.2,
-            max_tokens=900,
+            max_tokens=1500,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
