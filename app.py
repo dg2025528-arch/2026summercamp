@@ -734,17 +734,15 @@ def calculate_relative_recommendations(source_details, tfidf_result, candidates)
         similarity_column_map[key] = (abs_col, rel_col, pct_col)
         maximum_similarity_map[key] = maximum
 
-    def filter_for_method(key):
-        abs_col, rel_col, _ = similarity_column_map[key]
+        def filter_for_method(key):
+        abs_col, _, _ = similarity_column_map[key]
 
         filtered = all_results_df[
-            (all_results_df[abs_col] >= ABSOLUTE_MINIMUM_SIMILARITY)
-            & (all_results_df[rel_col] >= RELATIVE_MINIMUM_SIMILARITY)
+            all_results_df[abs_col] >= ABSOLUTE_MINIMUM_SIMILARITY
         ].copy()
 
         if filtered.empty and maximum_similarity_map[key] > 0:
-            best_index = all_results_df[abs_col].idxmax()
-            filtered = all_results_df.loc[[best_index]].copy()
+            filtered = all_results_df.loc[[all_results_df[abs_col].idxmax()]].copy()
 
         return filtered.sort_values(abs_col, ascending=False).reset_index(drop=True)
 
@@ -836,9 +834,9 @@ def explain_recommendation(
     else:
         reasons.append("공통 핵심어는 적지만 전체 단어 분포가 일부 비슷합니다.")
 
-    reasons.append(
-        f"{SIMILARITY_METHODS[method_key]} 점수 {scores[method_key]:.4f}로, "
-        f"후보 중 1위 대비 {relative_pct:.0f}% 수준입니다."
+       reasons.append(
+        f"{SIMILARITY_METHODS[method_key]} 점수 {scores[method_key]:.4f}, "
+        f"후보 {len(all_results)}개 중 {rank_positions[method_key]}위입니다."
     )
 
     ranks = [r for r in rank_positions.values() if r is not None]
@@ -907,7 +905,8 @@ def to_csv_bytes(dataframe):
 #     이 함수만 그걸로 교체하세요. (반환 형식 유지 필수)
 # =========================================================
 
-def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key):
+def generate_ai_summary(video_title, extractive_summary, keywords,
+                        groq_api_key, source_text=""):
     result = {"success": False, "text": "", "error_type": "", "error_message": ""}
 
     if not groq_api_key:
@@ -915,26 +914,36 @@ def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key)
         result["error_message"] = "GROQ_API_KEY가 설정되지 않았습니다."
         return result
 
+    system_prompt = (
+        "당신은 유튜브 영상 내용을 정리하는 한국어 요약 전문가입니다. "
+        "제공된 자막(또는 제목·설명)에 실제로 있는 내용만 사용하세요. "
+        "없는 내용을 추측하거나 지어내지 마세요. "
+        "자막이 영어 등 외국어여도 반드시 자연스러운 한국어로 답하세요. "
+        "자막의 오탈자와 말 더듬은 알아서 바로잡아 이해하세요."
+    )
+
+    body = source_text[:12000] if source_text else extractive_summary
+    user_prompt = (
+        f"[영상 제목]\n{video_title}\n\n"
+        f"[자막/본문]\n{body}\n\n"
+        f"[TF-IDF 핵심어 참고]\n{', '.join(keywords)}\n\n"
+        "아래 형식으로만 작성하세요.\n\n"
+        "**한 줄 요약**\n(영상 전체를 한 문장으로)\n\n"
+        "**핵심 내용**\n- (3~5개 불릿, 각 1~2문장, 영상의 흐름 순서대로)\n\n"
+        "**결론**\n(영상이 전달하려는 메시지 1~2문장)\n\n"
+        "규칙: 자막 문장을 그대로 복사하지 말고 자신의 말로 풀어 쓰세요. "
+        "인사말, 구독 요청, 광고는 제외하세요."
+    )
+
     try:
         client = Groq(api_key=groq_api_key)
         response = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            temperature=0.3,
+            model=GROQ_MODEL_NAME,
+            temperature=0.2,
+            max_tokens=900,
             messages=[
-                {
-                    "role": "system",
-                    "content": "너는 유튜브 영상 요약 도우미다. 한국어로 답한다.",
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"제목: {video_title}\n\n"
-                        f"핵심 문장:\n{extractive_summary}\n\n"
-                        f"핵심 키워드: {', '.join(keywords)}\n\n"
-                        "위 내용만 근거로 문장을 복사하지 말고 3~5문장으로 요약하고, "
-                        "그 아래에 '주요 포인트'를 불릿 5개 이내로 정리해줘."
-                    ),
-                },
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
         )
         result["text"] = response.choices[0].message.content
@@ -944,7 +953,6 @@ def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key)
         result["error_message"] = str(error)
 
     return result
-
 
 # =========================================================
 # 13. 세션 상태 + 분석 실행
@@ -1002,8 +1010,8 @@ def perform_tfidf_analysis(
         extractive_summary=tfidf_result["extractive_summary"],
         keywords=tfidf_result["keywords"],
         groq_api_key=groq_api_key,
+        source_text=source_text,
     )
-
     st.session_state.source_details = video_details
     st.session_state.source_text = source_text
     st.session_state.source_label = source_label
