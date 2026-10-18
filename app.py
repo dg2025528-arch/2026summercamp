@@ -3161,7 +3161,7 @@ if (
                 "(상위 추천 기준)"
             )
 
-                     multi_method_chart = (
+                          multi_method_chart = (
                 shown_recommendations[
                     [
                         "title",
