@@ -1027,8 +1027,8 @@ def perform_tfidf_analysis(
 
 
     [data-testid="stSidebar"] .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
-        border: none; color: #fff;
+        background: linear-gradient(135deg, ff4b4b 0%, 8e2de2 100%);
+        border: none; color: fff;
     }
     </style>
     <div class="hero">    return video_id, video_details, tfidf_result
