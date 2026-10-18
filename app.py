@@ -1216,6 +1216,13 @@ st.markdown(
     .chip-row {display: flex; flex-wrap: wrap; gap: 10px; margin: .4rem 0 1rem;}
     .chip-row .chip {margin: 0; padding: 6px 16px; font-size: 1rem;
                      background: #ffffff; border: 1px solid #888;}
+    .chip-row {display: flex; flex-wrap: wrap; gap: 14px; margin: .6rem 0 1.2rem;}
+    .chip-row .chip {
+        margin: 0; padding: 10px 24px; font-size: 1.15rem; font-weight: 500;
+        background: #ffffff; border: 1px solid #333; border-radius: 999px;
+        box-shadow: none; transition: transform .15s ease, background .15s ease;
+    }
+    .chip-row .chip:hover {transform: translateY(-3px); background: #ffd0d0;}
     </style>
     """,
     unsafe_allow_html=True,
