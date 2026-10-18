@@ -54,7 +54,7 @@ METHOD_GUIDE = {
         "weak": "한쪽이 훨씬 길면 합집합이 커져 점수가 눌립니다. 단어 중요도도 반영하지 못합니다.",
     },
 }
-
+MAX_KEYWORDS = 5   # 핵심어 최대 개수
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
 
 
@@ -437,7 +437,7 @@ def prepare_source_text(video_id, video_details, manual_transcript, uploaded_sub
 # 8. TF-IDF 분석
 # =========================================================
 
-def analyze_tfidf(source_text, sentence_count, keyword_count=20):
+def analyze_tfidf(source_text, sentence_count, keyword_count=MAX_KEYWORDS):
     sentences = split_sentences(source_text)
     if not sentences:
         raise ValueError("분석 가능한 문장을 찾지 못했습니다.")
