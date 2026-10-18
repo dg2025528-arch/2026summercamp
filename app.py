@@ -2121,17 +2121,18 @@ RelativeSimilarity_i
         """
     )
 
-if st.sidebar.button(
- selected_similarity_method = st.radio(
-    "추천 유사도 방식",
-    options=list(SIMILARITY_METHODS.keys()),
-    format_func=lambda key: SIMILARITY_METHODS[key],
-    index=0,  # 코사인 기본값
-    help=(
-        "유사도 비교 탭에서 상위 후보의 일치도와 "
-        "각 방식의 순위를 확인한 뒤 선택하세요."
-    ),
-)
+if st.sidebar.button("설정 적용"):          # 콜론(:) 필수! 버튼 라벨 인자 필요
+    selected_similarity_method = st.radio(  # if 블록 안이라 4칸 들여쓰기
+        "추천 유사도 방식",
+        options=list(SIMILARITY_METHODS.keys()),
+        format_func=lambda key: SIMILARITY_METHODS[key],
+        index=0,  # 코사인 기본값
+        help=(
+            "유사도 비교 탭에서 상위 후보의 일치도와 "
+            "각 방식의 순위를 확인한 뒤 선택하세요."
+        ),
+    )
+
 
 with st.sidebar:
     st.header("설정")
