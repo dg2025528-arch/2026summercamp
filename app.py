@@ -1020,18 +1020,14 @@ def perform_tfidf_analysis(
         source_text=source_text,
         sentence_count=sentence_count,
     )
+
     st.session_state.source_details = video_details
     st.session_state.source_text = source_text
     st.session_state.source_label = source_label
     st.session_state.tfidf_result = tfidf_result
 
+    return video_id, video_details, tfidf_result
 
-    [data-testid="stSidebar"] .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, ff4b4b 0%, 8e2de2 100%);
-        border: none; color: fff;
-    }
-    </style>
-    <div class="hero">    return video_id, video_details, tfidf_result
 # =========================================================
 # 14. 스타일 (글래스모피즘 + 애니메이션)
 # =========================================================
