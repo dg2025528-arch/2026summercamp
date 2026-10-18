@@ -43,7 +43,7 @@ SIMILARITY_METHODS = {
     "euclidean": "유클리드 유사도",
     "jaccard": "자카드 유사도",
 }   # "combined" 삭제
-
+}
 # [신규] 데이터별 권장 가이드 (덩어리 3의 가이드 탭에서 표시)
 METHOD_GUIDE = {
     "cosine": {
