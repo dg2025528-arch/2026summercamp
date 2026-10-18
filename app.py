@@ -906,7 +906,7 @@ def to_csv_bytes(dataframe):
 # =========================================================
 
 def generate_ai_summary(video_title, extractive_summary, keywords,
-                        groq_api_key, source_text=""):
+                        groq_api_key, source_text="", sentence_count=5):
     result = {"success": False, "text": "", "error_type": "", "error_message": ""}
 
     if not groq_api_key:
@@ -915,24 +915,31 @@ def generate_ai_summary(video_title, extractive_summary, keywords,
         return result
 
     system_prompt = (
-        "당신은 유튜브 영상 내용을 정리하는 한국어 요약 전문가입니다. "
-        "제공된 자막(또는 제목·설명)에 실제로 있는 내용만 사용하세요. "
+        "당신은 영상 내용을 사실 그대로 정리하는 한국어 요약가입니다. "
+        "제공된 자막(또는 제목·설명)에 실제로 나온 내용만 정리하세요. "
+        "감상평, 평가, 의견, 추천 의견('유익하다', '흥미롭다' 등)은 절대 쓰지 마세요. "
+        "'이 영상은 ~를 다룹니다' 같은 영상 자체에 대한 설명 대신 "
+        "영상에서 말한 내용 자체를 서술하세요. "
         "없는 내용을 추측하거나 지어내지 마세요. "
-        "자막이 영어 등 외국어여도 반드시 자연스러운 한국어로 답하세요. "
-        "자막의 오탈자와 말 더듬은 알아서 바로잡아 이해하세요."
+        "자막이 외국어여도 자연스러운 한국어로 쓰세요. "
+        "자막의 오탈자와 말 더듬은 바로잡아 이해하세요."
     )
 
     body = source_text[:12000] if source_text else extractive_summary
+    n = int(sentence_count)
+
     user_prompt = (
         f"[영상 제목]\n{video_title}\n\n"
         f"[자막/본문]\n{body}\n\n"
         f"[TF-IDF 핵심어 참고]\n{', '.join(keywords)}\n\n"
-        "아래 형식으로만 작성하세요.\n\n"
-        "**한 줄 요약**\n(영상 전체를 한 문장으로)\n\n"
-        "**핵심 내용**\n- (3~5개 불릿, 각 1~2문장, 영상의 흐름 순서대로)\n\n"
-        "**결론**\n(영상이 전달하려는 메시지 1~2문장)\n\n"
-        "규칙: 자막 문장을 그대로 복사하지 말고 자신의 말로 풀어 쓰세요. "
-        "인사말, 구독 요청, 광고는 제외하세요."
+        f"위 내용을 정확히 {n}개의 문장으로 요약하세요.\n"
+        "규칙:\n"
+        f"- 문장은 반드시 {n}개이며, 영상에서 다룬 순서대로 씁니다.\n"
+        "- 각 문장은 번호 없이 한 줄씩, 줄바꿈으로 구분합니다.\n"
+        "- 한 줄 요약, 제목, 결론, 소제목, 불릿, 서두 문구를 넣지 않습니다.\n"
+        "- 인사말, 구독 요청, 광고는 제외합니다.\n"
+        "- 자막 문장을 그대로 복사하지 말고 자신의 말로 풀어 씁니다.\n"
+        "- 구체적인 사실, 수치, 이름, 주장을 우선 포함합니다."
     )
 
     try:
@@ -946,7 +953,7 @@ def generate_ai_summary(video_title, extractive_summary, keywords,
                 {"role": "user", "content": user_prompt},
             ],
         )
-        result["text"] = response.choices[0].message.content
+        result["text"] = response.choices[0].message.content.strip()
         result["success"] = True
     except Exception as error:
         result["error_type"] = type(error).__name__
@@ -1005,12 +1012,13 @@ def perform_tfidf_analysis(
         sentence_count=sentence_count,
     )
 
-    tfidf_result["ai_summary_result"] = generate_ai_summary(
+     tfidf_result["ai_summary_result"] = generate_ai_summary(
         video_title=video_details["title"],
         extractive_summary=tfidf_result["extractive_summary"],
         keywords=tfidf_result["keywords"],
         groq_api_key=groq_api_key,
         source_text=source_text,
+        sentence_count=sentence_count,
     )
     st.session_state.source_details = video_details
     st.session_state.source_text = source_text
