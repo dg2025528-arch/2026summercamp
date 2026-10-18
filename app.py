@@ -1096,7 +1096,7 @@ with st.sidebar:
             new_recommend = st.slider(
                 "표시할 추천 수", 1, 10, current["recommendation_count"]
             )
-        if st.form_submit_button("적용", use_container_width=True):
+    if st.form_submit_button("적용", use_container_width=True):
                 st.session_state.settings = {
                     "sentence_count": new_sentence,
                     "candidate_count": new_candidate,
