@@ -897,7 +897,7 @@ def generate_ai_summary(
 
         response = client.chat.completions.create(
             #model=GROQ_MODEL_NAME,
-            GROQ_MODEL_NAME = "llama-3.1-8b-instant"
+            GROQ_MODEL_NAME = "llama-3.1-8b-instant",
 
             messages=[
                 {
