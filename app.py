@@ -928,7 +928,7 @@ def generate_ai_summary(video_title, extractive_summary, keywords,
         f"[자막/본문]\n{body}\n\n"
         f"[핵심어 참고]\n{', '.join(keywords)}\n\n"
         f"위 내용을 정확히 {n}개의 문장으로 요약하세요.\n"
-        "- 영상에서 다룬 순서대로, 한 줄에 한 문장씩 줄바꿈으로 구분합니다.\n"
+        "- 한 문단은 영상에서 다룬 순서대로, 한 줄에 한 문장씩 줄바꿈으로 구분합니다.\n"
         "- 번호, 불릿, 제목, 한 줄 요약, 결론, 서두 문구를 넣지 않습니다.\n"
         "- 인사말, 구독 요청, 광고는 제외합니다.\n"
         "- 자막을 그대로 복사하지 말고 자신의 말로 풀어 씁니다."
@@ -1042,10 +1042,19 @@ st.markdown(
     }
 
     /* 폰트: 각진 고딕 + 글자색 전부 검정 */
-    html, body, .stApp, .stApp * {
-        font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
-        color: #111111 !important;
-    }
+   html, body, .stApp {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+}
+.stApp *:not([data-testid="stIconMaterial"]):not(.material-icons):not([class*="material-symbols"]) {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+}
+.stApp, .stApp p, .stApp span, .stApp label, .stApp li,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp div {
+    color: #111111;
+}
+[data-testid="stIconMaterial"] {
+    font-family: "Material Symbols Rounded" !important;
+}
 
     /* 배경: 오로라 그라데이션 */
     .stApp {
