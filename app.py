@@ -894,7 +894,6 @@ def generate_ai_summary(
             + extractive_summary + "\n\n"
             "핵심 키워드: " + keyword_text
         )
-
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
@@ -910,6 +909,7 @@ def generate_ai_summary(
                 temperature=0.4,
                 max_tokens=500,
             )
+
 
 
 
