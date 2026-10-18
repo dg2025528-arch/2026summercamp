@@ -734,7 +734,7 @@ def calculate_relative_recommendations(source_details, tfidf_result, candidates)
         similarity_column_map[key] = (abs_col, rel_col, pct_col)
         maximum_similarity_map[key] = maximum
 
-        def filter_for_method(key):
+    def filter_for_method(key):
         abs_col, _, _ = similarity_column_map[key]
 
         filtered = all_results_df[
