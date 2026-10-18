@@ -895,23 +895,22 @@ def generate_ai_summary(
             "핵심 키워드: " + keyword_text
         )
 
-        response = client.chat.completions.create(
-            #model=GROQ_MODEL_NAME,
-            GROQ_MODEL_NAME = "llama-3.1-8b-instant",
+    response = client.chat.completions.create(
+    model="llama-3.1-8b-instant",
+    messages=[
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ],
+    temperature=0.4,
+    max_tokens=500,
+)
 
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
-            temperature=0.4,
-            max_tokens=500,
-        )
 
         summary_text = clean_text(
             response.choices[0].message.content
