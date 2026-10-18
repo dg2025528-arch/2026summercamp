@@ -894,24 +894,22 @@ def generate_ai_summary(
             + extractive_summary + "\n\n"
             "핵심 키워드: " + keyword_text
         )
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                    },
-                ],
-                temperature=0.4,
-                max_tokens=500,
-            )
 
-
-
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
 
         summary_text = clean_text(
             response.choices[0].message.content
@@ -939,7 +937,6 @@ def generate_ai_summary(
             str(error) or repr(error)
         )
         return result
-
 
 # =========================================================
 # 9. 후보 검색
