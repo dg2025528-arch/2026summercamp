@@ -914,32 +914,24 @@ def generate_ai_summary(video_title, extractive_summary, keywords,
         result["error_message"] = "GROQ_API_KEY가 설정되지 않았습니다."
         return result
 
+    n = int(sentence_count)
+    body = source_text[:12000] if source_text else extractive_summary
+
     system_prompt = (
         "당신은 영상 내용을 사실 그대로 정리하는 한국어 요약가입니다. "
-        "제공된 자막(또는 제목·설명)에 실제로 나온 내용만 정리하세요. "
-        "감상평, 평가, 의견, 추천 의견('유익하다', '흥미롭다' 등)은 절대 쓰지 마세요. "
-        "'이 영상은 ~를 다룹니다' 같은 영상 자체에 대한 설명 대신 "
-        "영상에서 말한 내용 자체를 서술하세요. "
-        "없는 내용을 추측하거나 지어내지 마세요. "
-        "자막이 외국어여도 자연스러운 한국어로 쓰세요. "
-        "자막의 오탈자와 말 더듬은 바로잡아 이해하세요."
+        "제공된 자막에 실제로 나온 내용만 정리하세요. "
+        "감상평, 평가, 의견은 쓰지 마세요. 없는 내용을 지어내지 마세요. "
+        "자막이 외국어여도 자연스러운 한국어로 쓰세요."
     )
-
-    body = source_text[:12000] if source_text else extractive_summary
-    n = int(sentence_count)
-
     user_prompt = (
         f"[영상 제목]\n{video_title}\n\n"
         f"[자막/본문]\n{body}\n\n"
-        f"[TF-IDF 핵심어 참고]\n{', '.join(keywords)}\n\n"
+        f"[핵심어 참고]\n{', '.join(keywords)}\n\n"
         f"위 내용을 정확히 {n}개의 문장으로 요약하세요.\n"
-        "규칙:\n"
-        f"- 문장은 반드시 {n}개이며, 영상에서 다룬 순서대로 씁니다.\n"
-        "- 각 문장은 번호 없이 한 줄씩, 줄바꿈으로 구분합니다.\n"
-        "- 한 줄 요약, 제목, 결론, 소제목, 불릿, 서두 문구를 넣지 않습니다.\n"
+        "- 영상에서 다룬 순서대로, 한 줄에 한 문장씩 줄바꿈으로 구분합니다.\n"
+        "- 번호, 불릿, 제목, 한 줄 요약, 결론, 서두 문구를 넣지 않습니다.\n"
         "- 인사말, 구독 요청, 광고는 제외합니다.\n"
-        "- 자막 문장을 그대로 복사하지 말고 자신의 말로 풀어 씁니다.\n"
-        "- 구체적인 사실, 수치, 이름, 주장을 우선 포함합니다."
+        "- 자막을 그대로 복사하지 말고 자신의 말로 풀어 씁니다."
     )
 
     try:
@@ -1035,36 +1027,27 @@ def perform_tfidf_analysis(
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
     html {scroll-behavior: smooth;}
 
-    /* ---------- 키프레임 ---------- */
     @keyframes aurora {
         0%   {background-position: 0% 50%;}
         50%  {background-position: 100% 50%;}
         100% {background-position: 0% 50%;}
     }
     @keyframes fadeUp {
-        from {opacity: 0; transform: translateY(28px);}
+        from {opacity: 0; transform: translateY(24px);}
         to   {opacity: 1; transform: translateY(0);}
-    }
-    @keyframes dropIn {
-        from {opacity: 0; transform: translateY(-40px);}
-        to   {opacity: 1; transform: translateY(0);}
-    }
-    @keyframes breathe {
-        0%, 100% {transform: scale(1);    box-shadow: 0 6px 20px rgba(142,45,226,.35);}
-        50%      {transform: scale(1.04); box-shadow: 0 10px 34px rgba(255,75,75,.55);}
-    }
-    @keyframes glowPulse {
-        0%, 100% {box-shadow: 0 0 8px rgba(142,45,226,.45);}
-        50%      {box-shadow: 0 0 22px rgba(255,75,75,.75);}
-    }
-    @keyframes shine {
-        from {background-position: -200% 0;}
-        to   {background-position: 200% 0;}
     }
 
-    /* ---------- 배경: 천천히 흐르는 오로라 ---------- */
+    /* 폰트: 각진 고딕 + 글자색 전부 검정 */
+    html, body, .stApp, .stApp * {
+        font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif !important;
+        color: #111111 !important;
+    }
+
+    /* 배경: 오로라 그라데이션 */
     .stApp {
         background: linear-gradient(120deg,
             #c9b6ff, #a8c8ff, #ffc2e2, #ffd9b8, #b8f0e0, #c9b6ff);
@@ -1074,121 +1057,81 @@ st.markdown(
     [data-testid="stHeader"] {background: transparent;}
     .block-container {max-width: 1200px; padding-top: 2rem;}
 
-    /* ---------- 글래스 공통 ---------- */
+    /* 카드: 거의 불투명한 흰색이라 글씨가 또렷함 */
     [data-testid="stSidebar"] > div:first-child {
-        background: rgba(255,255,255,.35);
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-        border-right: 1px solid rgba(255,255,255,.6);
+        background: rgba(255,255,255,.75);
+        border-right: 1px solid rgba(255,255,255,.9);
     }
     [data-testid="stVerticalBlockBorderWrapper"],
     [data-testid="stExpander"],
     [data-testid="stMetric"],
     [data-testid="stForm"] {
-        background: rgba(255,255,255,.45);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255,255,255,.7) !important;
-        border-radius: 18px !important;
-        box-shadow: 0 8px 32px rgba(80,60,160,.15);
+        background: rgba(255,255,255,.82);
+        border: 1px solid rgba(255,255,255,.95) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 6px 22px rgba(80,60,160,.12);
     }
-    [data-testid="stMetric"] {padding: .7rem 1rem;}
+    [data-testid="stMetric"] {padding: .6rem 1rem;}
 
-    /* ---------- 카드: 등장 + 호버 ---------- */
     [data-testid="stVerticalBlockBorderWrapper"] {
-        animation: fadeUp .7s ease both;
-        transition: transform .25s ease, box-shadow .25s ease;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: translateY(-6px);
-        box-shadow: 0 16px 42px rgba(80,60,160,.28);
-    }
-    [data-testid="stExpander"] {animation: fadeUp .6s ease both;}
-
-    /* ---------- 섹션 제목: 스크롤하면 나타남 ---------- */
-    .section-title {
-        font-size: 1.9rem; font-weight: 800; margin: 2.4rem 0 .8rem;
-        padding: .6rem 1.2rem; border-radius: 14px;
-        background: rgba(255,255,255,.5);
-        backdrop-filter: blur(12px);
-        border-left: 6px solid #ff4b4b;
-        animation: fadeUp .8s ease both;
-    }
-    @supports (animation-timeline: view()) {
-        .section-title, [data-testid="stVerticalBlockBorderWrapper"] {
-            animation: fadeUp linear both;
-            animation-timeline: view();
-            animation-range: entry 0% entry 35%;
-        }
-    }
-
-    /* ---------- 시작 화면 ---------- */
-    .landing {text-align:center; padding: 3.5rem 1rem 1.5rem;}
-    .landing h1 {
-        font-size: 3rem; font-weight: 900; margin-bottom: .6rem;
-        background: linear-gradient(90deg,#ff4b4b,#8e2de2,#2b7bff,#ff4b4b);
-        background-size: 200% auto;
-        -webkit-background-clip: text; background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: dropIn .9s ease both, shine 6s linear infinite;
-    }
-    .landing p {font-size: 1.15rem; color: #3a3a55;
-                animation: fadeUp 1s ease .3s both;}
-    [data-testid="stForm"] {animation: fadeUp 1s ease .5s both;}
-    [data-testid="stFormSubmitButton"] button {
-        height: 3.4rem; font-size: 1.3rem; font-weight: 800;
-        border: none; border-radius: 14px; color: #fff;
-        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
-        animation: breathe 2.6s ease-in-out infinite;
-    }
-
-    /* ---------- 사이드바 버튼 ---------- */
-    [data-testid="stSidebar"] .stButton button,
-    [data-testid="stSidebar"] .stButton button p {
-        font-size: 1.5rem !important; font-weight: 800 !important;
-    }
-    [data-testid="stSidebar"] .stButton button {
-        width: 100%; height: 4rem; min-height: 4rem; border-radius: 14px;
-        background: rgba(255,255,255,.6);
-        border: 1px solid rgba(255,255,255,.8);
+        animation: fadeUp .6s ease both;
         transition: transform .2s ease, box-shadow .2s ease;
     }
-    [data-testid="stSidebar"] .stButton button:hover {
-        transform: scale(1.05);
-        box-shadow: 0 8px 22px rgba(142,45,226,.3);
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px rgba(80,60,160,.22);
     }
-    [data-testid="stSidebar"] .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
-        border: none; color: #fff;
-        animation: glowPulse 2.4s ease-in-out infinite;
+
+    .section-title {
+        font-size: 1.7rem; font-weight: 700; margin: 2.2rem 0 .8rem;
+        padding: .5rem 1.1rem; border-radius: 12px;
+        background: rgba(255,255,255,.85);
+        border-left: 6px solid #ff4b4b;
+        animation: fadeUp .7s ease both;
     }
+
+    .landing {text-align:center; padding: 3.5rem 1rem 1.5rem;
+              animation: fadeUp .8s ease both;}
+    .landing h1 {font-size: 2.8rem; font-weight: 700; margin-bottom: .6rem;}
+    .landing p {font-size: 1.1rem;}
+
+    /* 버튼: 작고 단정하게 (사이드바 포함) */
+    .stButton button, [data-testid="stFormSubmitButton"] button {
+        background: rgba(255,255,255,.9);
+        border: 1px solid #999; border-radius: 10px;
+        font-weight: 500;
+        transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .stButton button:hover, [data-testid="stFormSubmitButton"] button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(80,60,160,.25);
+    }
+    [data-testid="stSidebar"] .stButton button {
+        width: 100%; height: 2.8rem; min-height: 2.8rem;
+    }
+    [data-testid="stSidebar"] .stButton button p {
+        font-size: 1.05rem !important; font-weight: 500 !important;
+    }
+    [data-testid="stSidebar"] .stButton button[kind="primary"],
+    [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"] {
+        background: #ffd0d0; border: 2px solid #ff4b4b;
+    }
+
     .nav-link {
         display:block; text-align:center; text-decoration:none !important;
-        font-size: 1.5rem; font-weight: 800; padding: 1rem 0;
-        margin-bottom: .7rem; border-radius: 14px; color: #262730 !important;
-        background: rgba(255,255,255,.6);
-        border: 1px solid rgba(255,255,255,.8);
-        transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+        font-size: 1.05rem; font-weight: 500; padding: .65rem 0;
+        margin-bottom: .5rem; border-radius: 10px;
+        background: rgba(255,255,255,.9); border: 1px solid #999;
+        transition: transform .15s ease, background .15s ease;
     }
-    .nav-link:hover {
-        transform: translateX(6px) scale(1.04);
-        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
-        color: #fff !important;
-        box-shadow: 0 8px 22px rgba(142,45,226,.35);
-    }
+    .nav-link:hover {transform: translateX(5px); background: #ffd0d0;}
 
-    /* ---------- 칩 / 배지 ---------- */
-    .chip {display:inline-block; padding:4px 14px; margin:3px;
-           border-radius:999px; background: rgba(255,255,255,.7);
-           border: 1px solid rgba(255,255,255,.9); color:#262730;
-           font-size:.9rem; font-weight:600;
-           transition: transform .2s ease;}
-    .chip:hover {transform: translateY(-3px) scale(1.06);}
-    .badge {display:inline-block; padding:3px 12px; border-radius:10px;
-            background:#e8f5e9; color:#1b5e20; font-weight:700;
-            font-size:.9rem;}
+    .chip {display:inline-block; padding:3px 12px; margin:3px;
+           border-radius:999px; background:#fff; border:1px solid #999;
+           font-size:.9rem; font-weight:500;}
+    .badge {display:inline-block; padding:3px 12px; border-radius:8px;
+            background:#d8f5da; font-weight:700; font-size:.9rem;}
 
-    /* ---------- 움직임 줄이기 설정 존중 ---------- */
     @media (prefers-reduced-motion: reduce) {
         * {animation: none !important; transition: none !important;}
     }
