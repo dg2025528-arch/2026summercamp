@@ -1145,103 +1145,65 @@ def search_candidates(
 # =========================================================
 # 10. 코사인 / 유클리드 / 자카드 유사도
 # =========================================================
+def method_columns(key):
+    return (f"{key}_similarity", f"{key}_relative", f"{key}_relative_percent")
 
-def calculate_jaccard_similarity(
-    source_text,
-    candidate_texts,
-):
-    """
-    토큰 집합을 기준으로 자카드 유사도를 계산합니다.
 
-    J(A, B) = |A ∩ B| / |A ∪ B|
-    """
-
-    source_tokens = set(
-        tokenize_mixed_text(source_text)
-    )
-
-    similarities = []
-
-    for candidate_text in candidate_texts:
-        candidate_tokens = set(
-            tokenize_mixed_text(candidate_text)
-        )
-
-        union_tokens = (
-            source_tokens | candidate_tokens
-        )
-
-        if not union_tokens:
-            similarity = 0.0
-        else:
-            intersection_tokens = (
-                source_tokens & candidate_tokens
-            )
-
-            similarity = (
-                len(intersection_tokens)
-                / len(union_tokens)
-            )
-
-        similarities.append(
-            float(similarity)
-        )
-
-    return np.asarray(
-        similarities,
-        dtype=float,
+def build_source_comparison_text(source_details, tfidf_result):
+    return clean_text(
+        " ".join([source_details["title"]] * 3)
+        + " " + tfidf_result["extractive_summary"]
+        + " " + " ".join(tfidf_result["keywords"][:15])
     )
 
 
-def convert_distance_to_similarity(
-    distances,
-):
-    """
-    유클리드 거리를 0~1 범위의 유사도로 변환합니다.
+def recommend_similarity_method(source_text, candidate_texts):
+    """이번 데이터의 길이 특성을 보고 가장 적합한 유사도와 이유를 반환합니다."""
+    source_n = len(tokenize_mixed_text(source_text))
+    cand_ns = [len(tokenize_mixed_text(t)) for t in candidate_texts] or [0]
+    median_n = float(np.median(cand_ns))
+    ratio = median_n / source_n if source_n else 0.0
 
-    similarity = 1 / (1 + distance)
-    """
+    if source_n >= 150 and median_n >= 150:
+        best = "cosine"
+        reason = (
+            f"입력({source_n}토큰)과 후보(중앙값 {median_n:.0f}토큰)가 모두 긴 텍스트라 "
+            "단어 중요도를 반영하는 코사인이 가장 적합합니다."
+        )
+    elif ratio < 0.4 or ratio > 2.5:
+        best = "cosine"
+        reason = (
+            f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 길이 차이가 큽니다. "
+            "자카드는 합집합이 커져 점수가 눌리므로 길이에 둔감한 코사인을 권장합니다."
+        )
+    elif median_n < 30 and source_n < 60:
+        best = "jaccard"
+        reason = (
+            f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 모두 짧습니다. "
+            "짧은 글은 TF-IDF 가중치가 불안정하므로 겹치는 단어 비율(자카드)을 우선하고 "
+            "코사인으로 교차 확인하세요."
+        )
+    else:
+        best = "cosine"
+        reason = (
+            f"입력 {source_n}토큰, 후보 중앙값 {median_n:.0f}토큰으로 길이가 비슷한 중간 길이 텍스트입니다. "
+            "핵심어 가중치를 반영하는 코사인을 기본으로 권장합니다."
+        )
 
-    distances = np.asarray(
-        distances,
-        dtype=float,
-    )
+    return {
+        "best": best,
+        "reason": reason,
+        "source_tokens": source_n,
+        "candidate_median_tokens": median_n,
+    }
 
-    return 1.0 / (1.0 + distances)
 
-
-def calculate_relative_recommendations(
-    source_details,
-    tfidf_result,
-    candidates,
-):
+def calculate_relative_recommendations(source_details, tfidf_result, candidates):
     if not candidates:
-        raise ValueError(
-            "비교할 후보 영상이 없습니다."
-        )
+        raise ValueError("비교할 후보 영상이 없습니다.")
 
-    source_comparison_text = clean_text(
-        source_details["title"]
-        + " "
-        + source_details["title"]
-        + " "
-        + source_details["title"]
-        + " "
-        + tfidf_result["extractive_summary"]
-        + " "
-        + " ".join(
-            tfidf_result["keywords"][:15]
-        )
-    )
-
-    candidate_texts = [
-        candidate["comparison_text"]
-        for candidate in candidates
-    ]
-
-    all_texts = [
-        source_comparison_text
-    ] + candidate_texts
+    source_text = build_source_comparison_text(source_details, tfidf_result)
+    candidate_texts = [c["comparison_text"] for c in candidates]
 
     vectorizer = TfidfVectorizer(
         tokenizer=tokenize_mixed_text,
@@ -1252,369 +1214,114 @@ def calculate_relative_recommendations(
         sublinear_tf=True,
         max_features=MAX_TFIDF_FEATURES,
     )
-
-    matrix = vectorizer.fit_transform(
-        all_texts
-    )
-
+    matrix = vectorizer.fit_transform([source_text] + candidate_texts)
     if matrix.shape[1] == 0:
-        raise ValueError(
-            "유사도를 계산할 단어가 없습니다."
-        )
+        raise ValueError("유사도를 계산할 단어가 없습니다.")
 
-    source_vector = matrix[0:1]
-    candidate_vectors = matrix[1:]
+    source_vector, candidate_vectors = matrix[0:1], matrix[1:]
 
-    cosine_values = cosine_similarity(
-        source_vector,
-        candidate_vectors,
-    ).ravel()
-
-    if len(cosine_values) == 0:
-        raise ValueError(
-            "코사인 유사도 결과가 비어 있습니다."
-        )
-
-    euclidean_distance_values = euclidean_distances(
-        source_vector,
-        candidate_vectors,
-    ).ravel()
-
-    euclidean_values = convert_distance_to_similarity(
-        euclidean_distance_values
-    )
-
-    jaccard_values = calculate_jaccard_similarity(
-        source_comparison_text,
-        candidate_texts,
-    )
-
-    combined_values = (
-        cosine_values
-        + euclidean_values
-        + jaccard_values
-    ) / 3.0
-
-    def build_relative(values):
-        maximum_value = float(np.max(values))
-
-        if maximum_value > 0:
-            relative = values / maximum_value
-        else:
-            relative = np.zeros(
-                len(values),
-                dtype=float,
-            )
-
-        return relative, maximum_value
-
-    (
-        cosine_relative,
-        cosine_maximum,
-    ) = build_relative(cosine_values)
-
-    (
-        euclidean_relative,
-        euclidean_maximum,
-    ) = build_relative(euclidean_values)
-
-    (
-        jaccard_relative,
-        jaccard_maximum,
-    ) = build_relative(jaccard_values)
-
-    (
-        combined_relative,
-        combined_maximum,
-    ) = build_relative(combined_values)
-
-    rows = []
-
-    for index, candidate in enumerate(
-        candidates
-    ):
-        row = candidate.copy()
-
-        row["cosine_similarity"] = float(
-            cosine_values[index]
-        )
-        row["cosine_relative"] = float(
-            cosine_relative[index]
-        )
-        row["cosine_relative_percent"] = float(
-            cosine_relative[index] * 100.0
-        )
-
-        row["euclidean_similarity"] = float(
-            euclidean_values[index]
-        )
-        row["euclidean_relative"] = float(
-            euclidean_relative[index]
-        )
-        row["euclidean_relative_percent"] = float(
-            euclidean_relative[index] * 100.0
-        )
-
-        row["jaccard_similarity"] = float(
-            jaccard_values[index]
-        )
-        row["jaccard_relative"] = float(
-            jaccard_relative[index]
-        )
-        row["jaccard_relative_percent"] = float(
-            jaccard_relative[index] * 100.0
-        )
-
-        row["combined_similarity"] = float(
-            combined_values[index]
-        )
-        row["combined_relative"] = float(
-            combined_relative[index]
-        )
-        row["combined_relative_percent"] = float(
-            combined_relative[index] * 100.0
-        )
-
-        rows.append(row)
-
-    all_results_df = pd.DataFrame(rows)
-
-    similarity_column_map = {
-        "cosine": (
-            "cosine_similarity",
-            "cosine_relative",
-            "cosine_relative_percent",
+    values_map = {
+        "cosine": cosine_similarity(source_vector, candidate_vectors).ravel(),
+        "euclidean": convert_distance_to_similarity(
+            euclidean_distances(source_vector, candidate_vectors).ravel()
         ),
-        "euclidean": (
-            "euclidean_similarity",
-            "euclidean_relative",
-            "euclidean_relative_percent",
-        ),
-        "jaccard": (
-            "jaccard_similarity",
-            "jaccard_relative",
-            "jaccard_relative_percent",
-        ),
-        "combined": (
-            "combined_similarity",
-            "combined_relative",
-            "combined_relative_percent",
-        ),
+        "jaccard": calculate_jaccard_similarity(source_text, candidate_texts),
     }
 
-    maximum_similarity_map = {
-        "cosine": cosine_maximum,
-        "euclidean": euclidean_maximum,
-        "jaccard": jaccard_maximum,
-        "combined": combined_maximum,
-    }
+    all_results_df = pd.DataFrame(candidates)
+    similarity_column_map = {}
+    maximum_similarity_map = {}
 
-    def filter_for_method(method_key):
-        (
-            absolute_column,
-            relative_column,
-            _,
-        ) = similarity_column_map[method_key]
+    for key, values in values_map.items():
+        absolute_col, relative_col, percent_col = method_columns(key)
+        maximum = float(np.max(values))
+        relative = values / maximum if maximum > 0 else np.zeros(len(values))
 
+        all_results_df[absolute_col] = values.astype(float)
+        all_results_df[relative_col] = relative.astype(float)
+        all_results_df[percent_col] = (relative * 100.0).astype(float)
+
+        similarity_column_map[key] = (absolute_col, relative_col, percent_col)
+        maximum_similarity_map[key] = maximum
+
+    def filter_for_method(key):
+        absolute_col, relative_col, _ = similarity_column_map[key]
         filtered = all_results_df[
-            (
-                all_results_df[absolute_column]
-                >= ABSOLUTE_MINIMUM_SIMILARITY
-            )
-            & (
-                all_results_df[relative_column]
-                >= RELATIVE_MINIMUM_SIMILARITY
-            )
+            (all_results_df[absolute_col] >= ABSOLUTE_MINIMUM_SIMILARITY)
+            & (all_results_df[relative_col] >= RELATIVE_MINIMUM_SIMILARITY)
         ].copy()
 
-        maximum_value = maximum_similarity_map[
-            method_key
-        ]
-
-        if filtered.empty and maximum_value > 0:
-            best_index = all_results_df[
-                absolute_column
-            ].idxmax()
-
-            filtered = all_results_df.loc[
-                [best_index]
-            ].copy()
-
+        if filtered.empty and maximum_similarity_map[key] > 0:
+            best_index = all_results_df[absolute_col].idxmax()
+            filtered = all_results_df.loc[[best_index]].copy()
             filtered["best_candidate_only"] = True
-
         else:
             filtered["best_candidate_only"] = False
 
-        filtered = filtered.sort_values(
-            by=absolute_column,
-            ascending=False,
-        ).reset_index(drop=True)
+        return filtered.sort_values(absolute_col, ascending=False).reset_index(drop=True)
 
-        return filtered
+    recommendations_by_method = {k: filter_for_method(k) for k in SIMILARITY_METHODS}
 
-    recommendations_by_method = {
-        method_key: filter_for_method(method_key)
-        for method_key in SIMILARITY_METHODS.keys()
-    }
-
-    feature_names = (
-        vectorizer.get_feature_names_out()
-    )
-
-    feature_columns = []
-
-    for index, feature_name in enumerate(
-        feature_names
-    ):
-        safe_name = re.sub(
-            r"[^가-힣A-Za-z0-9_]+",
-            "_",
-            str(feature_name),
-        )
-
-        feature_columns.append(
-            "tfidf_"
-            + str(index).zfill(4)
-            + "_"
-            + safe_name
-        )
-
-    candidate_feature_df = pd.DataFrame(
-        candidate_vectors.toarray(),
-        columns=feature_columns,
-    )
-
-    metadata_columns = [
-        "video_id",
-        "title",
-        "channel_title",
-        "url",
-        "views",
-        "likes",
-        "daily_views",
-        "cosine_similarity",
-        "cosine_relative",
-        "cosine_relative_percent",
-        "euclidean_similarity",
-        "euclidean_relative",
-        "euclidean_relative_percent",
-        "jaccard_similarity",
-        "jaccard_relative",
-        "jaccard_relative_percent",
-        "combined_similarity",
-        "combined_relative",
-        "combined_relative_percent",
+    feature_columns = [
+        "tfidf_" + str(i).zfill(4) + "_" + re.sub(r"[^가-힣A-Za-z0-9_]+", "_", str(name))
+        for i, name in enumerate(vectorizer.get_feature_names_out())
     ]
+    candidate_feature_df = pd.DataFrame(candidate_vectors.toarray(), columns=feature_columns)
 
-    metadata_df = all_results_df[
-        metadata_columns
-    ].reset_index(drop=True)
+    metadata_columns = ["video_id", "title", "channel_title", "url", "views", "likes", "daily_views"]
+    for key in SIMILARITY_METHODS:
+        metadata_columns += list(similarity_column_map[key])
 
     orange_df = pd.concat(
-        [
-            metadata_df,
-            candidate_feature_df.reset_index(
-                drop=True
-            ),
-        ],
+        [all_results_df[metadata_columns].reset_index(drop=True), candidate_feature_df],
         axis=1,
     )
 
-    candidate_lookup = {}
-
-    for candidate in candidates:
-        candidate_lookup[
-            candidate["video_id"]
-        ] = candidate
-
     return {
-        "recommendations_by_method": (
-            recommendations_by_method
-        ),
-        "similarity_column_map": (
-            similarity_column_map
-        ),
-        "maximum_similarity_map": (
-            maximum_similarity_map
-        ),
+        "recommendations_by_method": recommendations_by_method,
+        "similarity_column_map": similarity_column_map,
+        "maximum_similarity_map": maximum_similarity_map,
         "all_results": all_results_df,
         "orange_df": orange_df,
-        "candidate_lookup": candidate_lookup,
+        "candidate_lookup": {c["video_id"]: c for c in candidates},
+        "source_comparison_text": source_text,
+        "method_advice": recommend_similarity_method(source_text, candidate_texts),
     }
 
-def compare_similarity_methods(
-    recommendation_result,
-    top_k=5,
-):
-    """유사도별 상위 후보 일치도와 순위를 비교합니다."""
-    method_map = recommendation_result[
-        "similarity_column_map"
-    ]
+
+def compare_similarity_methods(recommendation_result, top_k=5):
+    """유사도별 상위 후보 일치도를 비교합니다. (정답 데이터가 없으므로 참고용)"""
+    method_map = recommendation_result["similarity_column_map"]
     all_results = recommendation_result["all_results"]
+    keys = list(method_map.keys())
 
-    method_keys = list(method_map.keys())
     top_ids = {}
-
-    for method in method_keys:
-        absolute_col, _, _ = method_map[method]
-
-        ranked = all_results.sort_values(
-            absolute_col, ascending=False
+    for key in keys:
+        col = method_map[key][0]
+        top_ids[key] = (
+            all_results.sort_values(col, ascending=False).head(top_k)["video_id"].tolist()
         )
-
-        top_ids[method] = ranked.head(top_k)[
-            "video_id"
-        ].tolist()
 
     rows = []
-
-    for method in method_keys:
-        absolute_col, _, _ = method_map[method]
-        ranked = all_results.sort_values(
-            absolute_col, ascending=False
-        )
-
-        scores = ranked[absolute_col].to_numpy()
-        top_mean = float(scores[:top_k].mean()) if len(scores) else 0.0
+    for key in keys:
+        col = method_map[key][0]
+        ranked = all_results.sort_values(col, ascending=False)
 
         overlaps = []
-        for other in method_keys:
-            if other == method:
+        for other in keys:
+            if other == key:
                 continue
-
-            a = set(top_ids[method])
-            b = set(top_ids[other])
-            union = a | b
-
-            overlaps.append(
-                len(a & b) / len(union) if union else 0.0
-            )
+            a, b = set(top_ids[key]), set(top_ids[other])
+            overlaps.append(len(a & b) / len(a | b) if (a | b) else 0.0)
 
         rows.append({
-            "유사도 방식": SIMILARITY_METHODS[method],
-            "1위 영상": (
-                ranked.iloc[0]["title"] if len(ranked) else ""
-            ),
-            f"상위 {top_k}개 평균 점수": round(top_mean, 4),
-            "다른 방식과의 평균 상위권 일치도": round(
-                float(np.mean(overlaps)) if overlaps else 1.0,
-                3,
-            ),
-            "상위 후보 수": len(top_ids[method]),
+            "유사도 방식": SIMILARITY_METHODS[key],
+            "1위 영상": ranked.iloc[0]["title"] if len(ranked) else "",
+            f"상위 {top_k}개 평균 점수": round(float(ranked[col].head(top_k).mean()), 4),
+            "다른 방식과의 상위권 일치도": round(float(np.mean(overlaps)), 3),
         })
 
-    comparison = pd.DataFrame(rows)
-
-    # 정답 데이터가 없는 상황에서의 참고용 지표입니다.
-    # 일치도가 높다고 실제 추천 품질까지 높다는 뜻은 아닙니다.
-    best_index = comparison[
-        "다른 방식과의 평균 상위권 일치도"
-    ].idxmax()
-
-    comparison["상위권 안정성 1위"] = False
-    comparison.loc[best_index, "상위권 안정성 1위"] = True
-
-    return comparison, top_ids
+    return pd.DataFrame(rows), top_ids
 
 
 def explain_recommendation(
@@ -1625,290 +1332,102 @@ def explain_recommendation(
     method_key,
     recommendation_result,
 ):
-    """공통 키워드와 다른 방식의 순위를 이용해 추천 근거를 만듭니다."""
-
-    source_text = clean_text(
-        source_details["title"] + " "
-        + tfidf_result["extractive_summary"] + " "
-        + " ".join(tfidf_result["keywords"][:20])
-    )
-
-    candidate_text = clean_text(
-        candidate.get("title", "") + " "
-        + candidate.get("description", "")
-    )
-
+    """공통 키워드, 점수, 순위, 데이터 특성을 묶어 추천 이유를 만듭니다."""
+    source_text = recommendation_result["source_comparison_text"]
     source_tokens = set(tokenize_mixed_text(source_text))
-    candidate_tokens = set(tokenize_mixed_text(candidate_text))
+    candidate_tokens = set(tokenize_mixed_text(candidate["comparison_text"]))
     common = source_tokens & candidate_tokens
 
-    keywords = tfidf_result["keywords"]
-    prioritized = [word for word in keywords if word in common]
-
+    prioritized = [w for w in tfidf_result["keywords"] if w in common]
     if not prioritized:
         prioritized = sorted(common, key=len, reverse=True)
 
-    scores = {
-        "cosine": recommendation_row["cosine_similarity"],
-        "euclidean": recommendation_row["euclidean_similarity"],
-        "jaccard": recommendation_row["jaccard_similarity"],
-        "combined": recommendation_row["combined_similarity"],
-    }
+    scores = {k: recommendation_row[f"{k}_similarity"] for k in SIMILARITY_METHODS}
 
-    method_labels = {
-        "cosine": "코사인",
-        "euclidean": "유클리드",
-        "jaccard": "자카드",
-        "combined": "통합",
-    }
-
-    ranked_results = recommendation_result["all_results"]
+    all_results = recommendation_result["all_results"]
     rank_positions = {}
+    for key, (col, _, _) in recommendation_result["similarity_column_map"].items():
+        ordered = all_results.sort_values(col, ascending=False).reset_index(drop=True)
+        match = ordered.index[ordered["video_id"] == candidate["video_id"]].tolist()
+        rank_positions[key] = match[0] + 1 if match else None
 
-    for method, (absolute_col, _, _) in (
-        recommendation_result["similarity_column_map"].items()
-    ):
-        ordered = ranked_results.sort_values(
-            absolute_col, ascending=False
-        ).reset_index(drop=True)
+    advice = recommendation_result["method_advice"]
+    relative_pct = recommendation_row[method_columns(method_key)[2]]
 
-        matches = ordered.index[
-            ordered["video_id"] == candidate["video_id"]
-        ].tolist()
-
-        rank_positions[method] = (
-            matches[0] + 1 if matches else None
+    reasons = []
+    if prioritized:
+        reasons.append(
+            f"입력 영상의 핵심어 {len(prioritized)}개가 이 영상의 제목·설명에도 나옵니다."
         )
+    else:
+        reasons.append("공통 핵심어는 적지만 전체 단어 분포가 일부 비슷합니다.")
+
+    reasons.append(
+        f"{SIMILARITY_METHODS[method_key]} 점수 {scores[method_key]:.4f}로, "
+        f"후보 중 1위 대비 {relative_pct:.0f}% 수준입니다."
+    )
+
+    ranks = [r for r in rank_positions.values() if r is not None]
+    if ranks and max(ranks) <= 3:
+        reasons.append("모든 유사도 방식에서 상위 3위 안에 들어 방식과 무관하게 일관된 추천입니다.")
+    elif ranks and max(ranks) - min(ranks) >= 5:
+        reasons.append("방식에 따라 순위 차이가 커서 한 가지 기준에만 의존한 추천일 수 있습니다.")
+
+    if method_key != advice["best"]:
+        reasons.append(
+            f"이번 데이터에는 {SIMILARITY_METHODS[advice['best']]}가 권장 방식입니다."
+        )
+
+    if candidate.get("daily_views", 0) > source_details.get("daily_views", 0):
+        reasons.append(
+            f"하루 평균 조회수 {candidate['daily_views']:,.0f}회로 입력 영상보다 활발히 시청되고 있습니다."
+        )
+    if candidate.get("channel_title") == source_details.get("channel_title"):
+        reasons.append("입력 영상과 같은 채널입니다.")
 
     return {
         "common_keywords": prioritized[:8],
         "scores": scores,
-        "method_labels": method_labels,
         "rank_positions": rank_positions,
+        "reasons": reasons,
     }
-    def compare_similarity_methods(
-    recommendation_result,
-    top_k=5,
-    ):
-        """유사도별 상위 후보 일치도와 순위를 비교합니다."""
-        method_map = recommendation_result[
-        "similarity_column_map"
-        ]
-        all_results = recommendation_result["all_results"]
 
-        method_keys = list(method_map.keys())
-        top_ids = {}
 
-        for method in method_keys:
-            absolute_col, _, _ = method_map[method]
+def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key):
+    """이미 정의돼 있다면 기존 것을 쓰세요."""
+    result = {"success": False, "text": "", "error_type": "", "error_message": ""}
 
-            ranked = all_results.sort_values(
-                absolute_col, ascending=False
-            )
+    if not groq_api_key:
+        result["error_type"] = "NoGroqKey"
+        result["error_message"] = "GROQ_API_KEY가 설정되지 않았습니다."
+        return result
 
-            top_ids[method] = ranked.head(top_k)[
-                "video_id"
-            ].tolist()
-    
-        rows = []
-
-    for method in method_keys:
-        absolute_col, _, _ = method_map[method]
-        ranked = all_results.sort_values(
-            absolute_col, ascending=False
+    try:
+        client = Groq(api_key=groq_api_key)
+        response = client.chat.completions.create(
+            model=GROQ_MODEL_NAME,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": "너는 유튜브 영상 요약 도우미다. 한국어로 답한다."},
+                {
+                    "role": "user",
+                    "content": (
+                        f"제목: {video_title}\n\n"
+                        f"핵심 문장:\n{extractive_summary}\n\n"
+                        f"핵심 키워드: {', '.join(keywords[:15])}\n\n"
+                        "위 내용만 근거로 문장을 복사하지 말고 3~5문장으로 요약하고, "
+                        "그 아래에 '주요 포인트'를 불릿 5개 이내로 정리해줘."
+                    ),
+                },
+            ],
         )
+        result["text"] = response.choices[0].message.content
+        result["success"] = True
+    except Exception as error:
+        result["error_type"] = type(error).__name__
+        result["error_message"] = str(error)
 
-        scores = ranked[absolute_col].to_numpy()
-        top_mean = float(scores[:top_k].mean()) if len(scores) else 0.0
-
-        overlaps = []
-        for other in method_keys:
-            if other == method:
-                continue
-
-            a = set(top_ids[method])
-            b = set(top_ids[other])
-            union = a | b
-
-            overlaps.append(
-                len(a & b) / len(union) if union else 0.0
-            )
-
-        rows.append({
-            "유사도 방식": SIMILARITY_METHODS[method],
-            "1위 영상": (
-                ranked.iloc[0]["title"] if len(ranked) else ""
-            ),
-            f"상위 {top_k}개 평균 점수": round(top_mean, 4),
-            "다른 방식과의 평균 상위권 일치도": round(
-                float(np.mean(overlaps)) if overlaps else 1.0,
-                3,
-            ),
-            "상위 후보 수": len(top_ids[method]),
-        })
-
-    comparison = pd.DataFrame(rows)
-
-    # 정답 데이터가 없는 상황에서의 참고용 지표입니다.
-    # 일치도가 높다고 실제 추천 품질까지 높다는 뜻은 아닙니다.
-    best_index = comparison[
-        "다른 방식과의 평균 상위권 일치도"
-    ].idxmax()
-
-    comparison["상위권 안정성 1위"] = False
-    comparison.loc[best_index, "상위권 안정성 1위"] = True
-
-    return comparison, top_ids
-
-
-def explain_recommendation(
-    source_details,
-    tfidf_result,
-    candidate,
-    recommendation_row,
-    method_key,
-    recommendation_result,
-):
-    """공통 키워드와 다른 방식의 순위를 이용해 추천 근거를 만듭니다."""
-
-    source_text = clean_text(
-        source_details["title"] + " "
-        + tfidf_result["extractive_summary"] + " "
-        + " ".join(tfidf_result["keywords"][:20])
-    )
-
-    candidate_text = clean_text(
-        candidate.get("title", "") + " "
-        + candidate.get("description", "")
-    )
-
-    source_tokens = set(tokenize_mixed_text(source_text))
-    candidate_tokens = set(tokenize_mixed_text(candidate_text))
-    common = source_tokens & candidate_tokens
-
-    keywords = tfidf_result["keywords"]
-    prioritized = [word for word in keywords if word in common]
-
-    if not prioritized:
-        prioritized = sorted(common, key=len, reverse=True)
-
-    scores = {
-        "cosine": recommendation_row["cosine_similarity"],
-        "euclidean": recommendation_row["euclidean_similarity"],
-        "jaccard": recommendation_row["jaccard_similarity"],
-        "combined": recommendation_row["combined_similarity"],
-    }
-
-    method_labels = {
-        "cosine": "코사인",
-        "euclidean": "유클리드",
-        "jaccard": "자카드",
-        "combined": "통합",
-    }
-
-    ranked_results = recommendation_result["all_results"]
-    rank_positions = {}
-
-    for method, (absolute_col, _, _) in (
-        recommendation_result["similarity_column_map"].items()
-    ):
-        ordered = ranked_results.sort_values(
-            absolute_col, ascending=False
-        ).reset_index(drop=True)
-
-        matches = ordered.index[
-            ordered["video_id"] == candidate["video_id"]
-        ].tolist()
-
-        rank_positions[method] = (
-            matches[0] + 1 if matches else None
-        )
-
-    return {
-        "common_keywords": prioritized[:8],
-        "scores": scores,
-        "method_labels": method_labels,
-        "rank_positions": rank_positions,
-    }
-    
-def create_pair_tfidf_table(
-    source_details,
-    tfidf_result,
-    candidate,
-):
-    source_text = clean_text(
-        source_details["title"]
-        + " "
-        + source_details["title"]
-        + " "
-        + source_details["title"]
-        + " "
-        + tfidf_result["extractive_summary"]
-        + " "
-        + " ".join(
-            tfidf_result["keywords"][:15]
-        )
-    )
-
-    candidate_text = candidate[
-        "comparison_text"
-    ]
-
-    vectorizer = TfidfVectorizer(
-        tokenizer=tokenize_mixed_text,
-        token_pattern=None,
-        lowercase=False,
-        ngram_range=(1, 1),
-        use_idf=True,
-        smooth_idf=True,
-        norm=None,
-        max_features=MAX_TFIDF_FEATURES,
-    )
-
-    matrix = vectorizer.fit_transform(
-        [
-            source_text,
-            candidate_text,
-        ]
-    )
-
-    feature_names = (
-        vectorizer.get_feature_names_out()
-    )
-
-    idf_values = vectorizer.idf_
-
-    source_values = (
-        matrix[0].toarray().ravel()
-    )
-
-    candidate_values = (
-        matrix[1].toarray().ravel()
-    )
-
-    detail_df = pd.DataFrame(
-        {
-            "단어": feature_names,
-            "IDF": idf_values,
-            "입력 영상 TF-IDF": source_values,
-            "후보 영상 TF-IDF": candidate_values,
-            "TF-IDF 합계": (
-                source_values
-                + candidate_values
-            ),
-        }
-    )
-
-    return detail_df.sort_values(
-        by="TF-IDF 합계",
-        ascending=False,
-    ).head(30)
-
-
-def to_csv_bytes(dataframe):
-    return dataframe.to_csv(
-        index=False
-    ).encode("utf-8-sig")
+    return result
     # =========================================================
 # 11. 세션 상태
 # =========================================================
