@@ -1182,17 +1182,6 @@ st.markdown(
         border-radius: 10px; padding: .8rem 1.1rem; margin: .5rem 0;
         line-height: 1.7;
     }
-
-    /* 후보 검색어: 튀는 박스 */
-    .query-box {
-        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
-        border-radius: 16px; padding: 1rem 1.4rem; margin: .8rem 0;
-        box-shadow: 0 8px 24px rgba(142,45,226,.35);
-    }
-    .query-box .q-label {font-size: .85rem; font-weight: 500; opacity: .9;}
-    .query-box .q-text {font-size: 1.4rem; font-weight: 700;}
-    .query-box, .query-box * {color: #ffffff !important;}
-
     /* 사이드바 정리 */
     [data-testid="stSidebar"] {min-width: 250px; max-width: 250px;}
     .side-title {font-size: 1.2rem; font-weight: 700; margin: .3rem 0 .6rem;}
@@ -1223,6 +1212,20 @@ st.markdown(
         box-shadow: none; transition: transform .15s ease, background .15s ease;
     }
     .chip-row .chip:hover {transform: translateY(-3px); background: #ffd0d0;}
+        .query-box {
+        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
+        border-radius: 16px; padding: 1rem 1.4rem; margin: .8rem 0;
+        box-shadow: 0 8px 24px rgba(142,45,226,.35);
+    }
+    .query-box .q-label {font-size: .9rem; font-weight: 700; margin-bottom: .6rem;}
+    .query-box .q-row {display: flex; flex-wrap: wrap; gap: 10px;}
+    .query-box .q-chip {
+        padding: 6px 18px; border-radius: 999px; font-size: 1.1rem;
+        font-weight: 700; background: #ffffff;
+        border: 1px solid #ffffff;
+    }
+    .query-box .q-label {color: #ffffff !important;}
+    .query-box .q-chip {color: #111111 !important;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -1539,9 +1542,13 @@ with right:
     m1.metric("조회수", f"{source_details['views']:,}")
     m2.metric("좋아요", f"{source_details['likes']:,}")
     m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
+        query_chips = "".join(
+        f"<span class='q-chip'>{w}</span>"
+        for w in st.session_state.search_query.split()
+    )
     st.markdown(
         "<div class='query-box'><div class='q-label'>🔍 후보 검색어</div>"
-        f"<div class='q-text'>{st.session_state.search_query}</div></div>",
+        f"<div class='q-row'>{query_chips}</div></div>",
         unsafe_allow_html=True,
     )
 
