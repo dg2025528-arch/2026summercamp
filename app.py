@@ -1046,48 +1046,17 @@ st.markdown(
             background:#e8f5e9; color:#1b5e20; font-weight:600;
             font-size:.85rem;}
 
-    /* ⚙️ 설정 버튼: 작게 */
+       /* 사이드바 모든 버튼을 같은 모양으로 */
     [data-testid="stSidebar"] .stButton button {
-        height: 2.2rem; min-height: 2.2rem;
-        font-size: .95rem; font-weight: 600;
-        padding: 0 .8rem;
+        width: 100%;
+        height: 3.4rem; min-height: 3.4rem;
+        font-size: 1.15rem; font-weight: 700;
+        border-radius: 12px;
     }
-
-    /* 메뉴(라디오)를 큰 버튼형 탭으로 */
-    [data-testid="stSidebar"] div[role="radiogroup"] {
-        gap: 1.1rem; width: 100%;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label {
-        width: 100% !important;
-        min-height: 6rem;
-        padding: 1.6rem 1.2rem;
-        border-radius: 16px;
-        border: 2px solid #d0d4dc;
-        background: #f7f8fa;
-        cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        transition: all .15s ease;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
-        border-color: #ff4b4b; background: #fff3f3;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label p {
-        font-size: 1.7rem !important;
-        font-weight: 800;
-        margin: 0;
-        text-align: center;
-        line-height: 1.2;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+    /* 현재 선택된 메뉴(primary)는 강조 */
+    [data-testid="stSidebar"] .stButton button[kind="primary"] {
         background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
-        border-color: transparent;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
-        color: #ffffff !important;
-    }
-    /* 라디오 동그라미 숨김 */
-    [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
-        display: none;
+        border: none; color: #fff;
     }
     </style>
     <div class="hero">
@@ -1138,11 +1107,21 @@ with st.sidebar:
 
     st.divider()
 
-    page = st.radio(
-        "메뉴",
-        ["📝 요약", "📊 TF-IDF", "🎯 유사도"],
-        label_visibility="collapsed",
-    )
+       if "page" not in st.session_state:
+        st.session_state.page = "📝 요약"
+
+    for menu_name in ["📝 요약", "📊 TF-IDF", "🎯 유사도"]:
+        is_current = st.session_state.page == menu_name
+        if st.button(
+            menu_name,
+            key="menu_" + menu_name,
+            use_container_width=True,
+            type="primary" if is_current else "secondary",
+        ):
+            st.session_state.page = menu_name
+            st.rerun()
+
+    page = st.session_state.page
 
 settings = st.session_state.settings
 summary_sentence_count = settings["sentence_count"]
