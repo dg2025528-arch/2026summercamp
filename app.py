@@ -1144,6 +1144,50 @@ st.markdown(
     @media (prefers-reduced-motion: reduce) {
         * {animation: none !important; transition: none !important;}
     }
+        /* 표/차트: 흰 배경 박스로 감싸 글씨 가독성 확보 */
+    [data-testid="stDataFrame"],
+    [data-testid="stArrowVegaLiteChart"],
+    [data-testid="stVegaLiteChart"] {
+        background: #ffffff !important;
+        border: 1px solid #cfcfcf;
+        border-radius: 12px;
+        padding: 8px;
+        box-shadow: 0 4px 14px rgba(80,60,160,.12);
+    }
+    [data-testid="stDataFrame"] iframe {
+        background: #ffffff !important;
+        color-scheme: light;
+    }
+
+    /* 요약 박스 */
+    .summary-box {
+        background: rgba(255,255,255,.92);
+        border-left: 6px solid #8e2de2;
+        border-radius: 12px; padding: 1rem 1.3rem; margin: .6rem 0;
+        box-shadow: 0 4px 14px rgba(80,60,160,.12);
+    }
+    .summary-box h4 {margin: 0 0 .5rem; font-size: 1.15rem;}
+    .summary-box ul {margin: 0; padding-left: 1.2rem;}
+    .summary-box li {margin-bottom: .45rem; line-height: 1.6;}
+    .quote-box {
+        background: #fffbe8; border-left: 5px solid #f5b400;
+        border-radius: 10px; padding: .8rem 1.1rem; margin: .5rem 0;
+        line-height: 1.7;
+    }
+
+    /* 후보 검색어: 튀는 박스 */
+    .query-box {
+        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
+        border-radius: 16px; padding: 1rem 1.4rem; margin: .8rem 0;
+        box-shadow: 0 8px 24px rgba(142,45,226,.35);
+    }
+    .query-box .q-label {font-size: .85rem; font-weight: 500; opacity: .9;}
+    .query-box .q-text {font-size: 1.4rem; font-weight: 700;}
+    .query-box, .query-box * {color: #ffffff !important;}
+
+    /* 사이드바 정리 */
+    [data-testid="stSidebar"] {min-width: 250px; max-width: 250px;}
+    .side-title {font-size: 1.2rem; font-weight: 700; margin: .3rem 0 .6rem;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -1242,12 +1286,22 @@ if not st.session_state.entered:
 # =========================================================
 
 with st.sidebar:
-    if st.button("⚙️ 설정", use_container_width=True):
-        st.session_state.show_settings = not st.session_state.show_settings
+    st.markdown("<div class='side-title'>🎬 메뉴</div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <a class="nav-link" href="#sec-info">🎥 영상 정보</a>
+        <a class="nav-link" href="#sec-summary">📝 요약</a>
+        <a class="nav-link" href="#sec-tfidf">📊 TF-IDF</a>
+        <a class="nav-link" href="#sec-similar">🎯 유사도</a>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if st.session_state.show_settings:
+    st.divider()
+
+    with st.expander("⚙️ 설정", expanded=False):
+        current = st.session_state.settings
         with st.form("settings_form"):
-            current = st.session_state.settings
             new_sentence = st.slider("요약 문장 수", 3, 10, current["sentence_count"])
             new_candidate = st.slider(
                 "후보 영상 수", 5, 50, current["candidate_count"], step=5
@@ -1261,19 +1315,8 @@ with st.sidebar:
                     "candidate_count": new_candidate,
                     "recommendation_count": new_recommend,
                 }
-                st.session_state.show_settings = False
                 st.rerun()
 
-    st.divider()
-    st.markdown(
-        """
-        <a class="nav-link" href="#sec-info">🎥 영상 정보</a>
-        <a class="nav-link" href="#sec-summary">📝 요약</a>
-        <a class="nav-link" href="#sec-tfidf">📊 TF-IDF</a>
-        <a class="nav-link" href="#sec-similar">🎯 유사도</a>
-        """,
-        unsafe_allow_html=True,
-    )
     st.divider()
     if st.button("🏠 처음으로", use_container_width=True):
         st.session_state.entered = False
@@ -1461,25 +1504,39 @@ with right:
     m1.metric("조회수", f"{source_details['views']:,}")
     m2.metric("좋아요", f"{source_details['likes']:,}")
     m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
-    st.caption("후보 검색어: " + st.session_state.search_query)
+    st.markdown(
+        "<div class='query-box'><div class='q-label'>🔍 후보 검색어</div>"
+        f"<div class='q-text'>{st.session_state.search_query}</div></div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ---------- 📝 요약 ----------
-st.markdown("<div id='sec-summary'></div>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>📝 요약</div>", unsafe_allow_html=True)
-
 ai = tfidf_result.get("ai_summary_result", {"success": False})
 
 if ai.get("success"):
-    for line in ai["text"].splitlines():
-        if line.strip():
-            st.markdown("- " + line.strip())
+    items = "".join(
+        f"<li>{line.strip()}</li>"
+        for line in ai["text"].splitlines()
+        if line.strip()
+    )
+    st.markdown(
+        f"<div class='summary-box'><h4>📌 핵심 내용</h4><ul>{items}</ul></div>",
+        unsafe_allow_html=True,
+    )
     st.caption("✨ AI가 자막 내용을 바탕으로 정리한 요약입니다.")
 else:
-    st.write(tfidf_result["extractive_summary"])
-    st.warning("AI 요약을 사용할 수 없어 자막에서 추출한 문장을 표시했습니다.")
+    st.warning("AI 요약을 사용할 수 없어 아래 핵심 문장만 표시합니다.")
     st.write("오류 유형: " + ai.get("error_type", "알 수 없음"))
     st.code(ai.get("error_message") or "오류 메시지가 없습니다.")
+
+sentence_df = tfidf_result["sentence_score_df"]
+quotes = "".join(
+    f"<div class='quote-box'>“{s}”</div>"
+    for s in sentence_df.sort_values("문장 번호")["문장"].tolist()
+)
+st.markdown("#### 💬 핵심 문장")
+st.markdown(quotes, unsafe_allow_html=True)
 
 st.markdown("**핵심어 (최대 5개)**")
 st.markdown(
@@ -1489,7 +1546,6 @@ st.markdown(
     ),
     unsafe_allow_html=True,
 )
-
 with st.expander("원문 근거 문장 보기 (TF-IDF 추출 원본)"):
     st.write(tfidf_result["extractive_summary"])
 
