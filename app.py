@@ -918,7 +918,7 @@ def generate_ai_summary(video_title, extractive_summary, keywords, groq_api_key)
     try:
         client = Groq(api_key=groq_api_key)
         response = client.chat.completions.create(
-            model=GROQ_MODEL_NAME,
+            model="openai/gpt-oss-20b",
             temperature=0.3,
             messages=[
                 {
