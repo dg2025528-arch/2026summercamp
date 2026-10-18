@@ -1025,62 +1025,154 @@ def perform_tfidf_analysis(
     st.session_state.source_label = source_label
     st.session_state.tfidf_result = tfidf_result
 
-    return video_id, video_details, tfidf_result
+
+    [data-testid="stSidebar"] .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
+        border: none; color: #fff;
+    }
+    </style>
+    <div class="hero">    return video_id, video_details, tfidf_result
 # =========================================================
-# 14. 스타일 + 상단 배너
+# 14. 스타일
 # =========================================================
 
 st.markdown(
     """
     <style>
+    html {scroll-behavior: smooth;}
     .block-container {max-width: 1200px; padding-top: 2rem;}
     .hero {padding: 1.4rem 1.6rem; border-radius: 16px; color: white;
            background: linear-gradient(135deg,#ff4b4b 0%,#8e2de2 100%);
            margin-bottom: 1rem;}
     .hero h1 {margin: 0; font-size: 1.8rem; color: white;}
     .hero p {margin: .3rem 0 0; opacity: .92;}
+    .landing {text-align:center; padding: 3rem 1rem 1.5rem;}
+    .landing h1 {font-size: 2.8rem; margin-bottom: .5rem;}
+    .landing p {font-size: 1.15rem; color: #666;}
     .chip {display:inline-block; padding:2px 10px; margin:2px;
            border-radius:999px; background:#f0f2f6; color:#262730;
            font-size:.85rem;}
     .badge {display:inline-block; padding:2px 10px; border-radius:8px;
             background:#e8f5e9; color:#1b5e20; font-weight:600;
             font-size:.85rem;}
+    .section-title {font-size: 1.9rem; font-weight: 800; margin: 2rem 0 .5rem;
+                    padding-bottom: .4rem; border-bottom: 3px solid #ff4b4b;}
 
-       /* 사이드바 모든 버튼을 같은 모양으로 */
-    [data-testid="stSidebar"] .stButton button {
-        width: 100%;
-        height: 3.4rem; min-height: 3.4rem;
-        font-size: 1.15rem; font-weight: 700;
-        border-radius: 12px;
+    /* 사이드바 버튼: 폰트 크게 */
+    [data-testid="stSidebar"] .stButton button,
+    [data-testid="stSidebar"] .stButton button p {
+        font-size: 1.5rem !important; font-weight: 800 !important;
     }
-    /* 현재 선택된 메뉴(primary)는 강조 */
+    [data-testid="stSidebar"] .stButton button {
+        width: 100%; height: 4rem; min-height: 4rem; border-radius: 12px;
+    }
     [data-testid="stSidebar"] .stButton button[kind="primary"] {
         background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
         border: none; color: #fff;
     }
+    .nav-link {display:block; text-align:center; text-decoration:none !important;
+               font-size: 1.5rem; font-weight: 800; padding: 1rem 0;
+               margin-bottom: .7rem; border-radius: 12px;
+               border: 1px solid #d0d4dc; background: #f7f8fa; color: #262730 !important;}
+    .nav-link:hover {border-color:#ff4b4b; background:#fff3f3;}
     </style>
-    <div class="hero">
-      <h1>🎬 YouTube 요약 · 유사 영상 추천</h1>
-      <p>TF-IDF로 핵심을 뽑고, 코사인·유클리드·자카드로 비슷한 영상을 찾아 이유까지 설명합니다.</p>
-    </div>
     """,
     unsafe_allow_html=True,
 )
 
 
 # =========================================================
-# 15. 좌측 사이드바: ⚙️ 설정 + 메뉴
+# 15. 상태 + 설정(사이드바)
 # =========================================================
 
+if "entered" not in st.session_state:
+    st.session_state.entered = False
 if "settings" not in st.session_state:
     st.session_state.settings = {
         "sentence_count": 5,
         "candidate_count": 20,
         "recommendation_count": 5,
     }
-
 if "show_settings" not in st.session_state:
     st.session_state.show_settings = False
+if "input_url" not in st.session_state:
+    st.session_state.input_url = ""
+if "input_query" not in st.session_state:
+    st.session_state.input_query = ""
+
+api_key = get_api_key()
+groq_api_key = get_groq_api_key()
+
+
+def show_error(title, error):
+    st.error(title)
+    st.write("오류 유형: " + type(error).__name__)
+    st.write("오류 내용: " + str(error))
+    with st.expander("상세 오류"):
+        st.code(traceback.format_exc())
+
+
+# =========================================================
+# 16. 시작 화면
+# =========================================================
+
+if not st.session_state.entered:
+    st.markdown(
+        """
+        <div class="landing">
+          <h1>🎬 YouTube 요약 · 유사 영상 추천</h1>
+          <p>영상 링크를 입력하면 요약, TF-IDF 분석, 비슷한 영상 추천까지 한 번에 보여드립니다.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        if not api_key:
+            st.warning("Streamlit Secrets에 YOUTUBE_API_KEY를 설정하세요.")
+        if not groq_api_key:
+            st.info("GROQ_API_KEY가 없어 AI 요약 대신 TF-IDF 추출 요약을 사용합니다.")
+
+        with st.form("landing_form"):
+            url_in = st.text_input(
+                "YouTube 영상 링크",
+                placeholder="https://www.youtube.com/watch?v=...",
+            )
+            query_in = st.text_input(
+                "후보 검색어 (선택, 비우면 자동 생성)",
+                placeholder="예: 인공지능 교육 활용",
+            )
+            with st.expander("자막 직접 입력 또는 업로드 (선택)"):
+                manual_in = st.text_area("자막 직접 입력", height=120)
+                upload_in = st.file_uploader(
+                    "TXT, SRT, VTT 자막 파일", type=["txt", "srt", "vtt"]
+                )
+            go = st.form_submit_button(
+                "🚀 입장하기", type="primary", use_container_width=True
+            )
+
+        if go:
+            if not extract_video_id(url_in):
+                st.error("올바른 YouTube 링크를 입력하세요.")
+            elif not api_key:
+                st.error("YOUTUBE_API_KEY가 필요합니다.")
+            else:
+                st.session_state.input_url = url_in.strip()
+                st.session_state.input_query = query_in.strip()
+                st.session_state.input_manual = manual_in
+                st.session_state.input_upload = upload_in
+                st.session_state.entered = True
+                st.session_state.analysis_sig = None
+                st.session_state.recommend_sig = None
+                st.rerun()
+
+    st.stop()
+
+
+# =========================================================
+# 17. 사이드바 (입장 후): 설정 + 이동 메뉴
+# =========================================================
 
 with st.sidebar:
     if st.button("⚙️ 설정", use_container_width=True):
@@ -1096,7 +1188,7 @@ with st.sidebar:
             new_recommend = st.slider(
                 "표시할 추천 수", 1, 10, current["recommendation_count"]
             )
-        if st.form_submit_button("적용", use_container_width=True):
+            if st.form_submit_button("적용", use_container_width=True):
                 st.session_state.settings = {
                     "sentence_count": new_sentence,
                     "candidate_count": new_candidate,
@@ -1106,66 +1198,34 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-
-    if "page" not in st.session_state:
-        st.session_state.page = "📝 요약"
-
-    for menu_name in ["📝 요약", "📊 TF-IDF", "🎯 유사도"]:
-        is_current = st.session_state.page == menu_name
-        if st.button(
-            menu_name,
-            key="menu_" + menu_name,
-            use_container_width=True,
-            type="primary" if is_current else "secondary",
-        ):
-            st.session_state.page = menu_name
-            st.rerun()
-
-    page = st.session_state.page
+    st.markdown(
+        """
+        <a class="nav-link" href="#sec-info">🎥 영상 정보</a>
+        <a class="nav-link" href="#sec-summary">📝 요약</a>
+        <a class="nav-link" href="#sec-tfidf">📊 TF-IDF</a>
+        <a class="nav-link" href="#sec-similar">🎯 유사도</a>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+    if st.button("🏠 처음으로", use_container_width=True):
+        st.session_state.entered = False
+        st.rerun()
 
 settings = st.session_state.settings
 summary_sentence_count = settings["sentence_count"]
 candidate_count = settings["candidate_count"]
 recommendation_count = settings["recommendation_count"]
 
+youtube_url = st.session_state.input_url
+custom_search_query = st.session_state.input_query
+manual_transcript = st.session_state.get("input_manual", "")
+uploaded_subtitle = st.session_state.get("input_upload", None)
+
 
 # =========================================================
-# 16. 입력 + 자동 실행 (메뉴 클릭 시 바로 분석)
+# 18. 분석 자동 실행 (요약 + TF-IDF + 유사도 한 번에)
 # =========================================================
-
-api_key = get_api_key()
-groq_api_key = get_groq_api_key()
-
-if not api_key:
-    st.warning("Streamlit Secrets에 YOUTUBE_API_KEY를 설정하세요.")
-
-if not groq_api_key:
-    st.info("GROQ_API_KEY가 없어 AI 요약 대신 TF-IDF 추출 요약을 사용합니다.")
-
-youtube_url = st.text_input(
-    "YouTube 영상 URL (입력 후 Enter, 왼쪽 메뉴로 이동하면 자동 분석됩니다)",
-    placeholder="https://www.youtube.com/watch?v=...",
-)
-
-custom_search_query = st.text_input(
-    "후보 영상 검색어(선택)",
-    placeholder="예: 인공지능 교육 활용",
-)
-
-with st.expander("자막 직접 입력 또는 업로드"):
-    manual_transcript = st.text_area("자막 직접 입력", height=150)
-    uploaded_subtitle = st.file_uploader(
-        "TXT, SRT, VTT 자막 파일", type=["txt", "srt", "vtt"]
-    )
-
-
-def show_error(title, error):
-    st.error(title)
-    st.write("오류 유형: " + type(error).__name__)
-    st.write("오류 내용: " + str(error))
-    with st.expander("상세 오류"):
-        st.code(traceback.format_exc())
-
 
 def run_analysis():
     return perform_tfidf_analysis(
@@ -1179,33 +1239,22 @@ def run_analysis():
 
 
 analysis_sig = (
-    youtube_url.strip(),
+    youtube_url,
     manual_transcript.strip(),
     uploaded_subtitle.name if uploaded_subtitle is not None else "",
     summary_sentence_count,
 )
-recommend_sig = analysis_sig + (custom_search_query.strip(), candidate_count)
-
-if not youtube_url.strip():
-    st.info("YouTube URL을 입력하세요.")
-    st.stop()
-
-if not api_key:
-    st.stop()
+recommend_sig = analysis_sig + (custom_search_query, candidate_count)
 
 try:
-    video_id_now = None
     if st.session_state.get("analysis_sig") != analysis_sig:
         with st.spinner("영상 분석 및 AI 요약 중..."):
-            video_id_now, _, _ = run_analysis()
+            run_analysis()
         st.session_state.analysis_sig = analysis_sig
         st.session_state.recommendation_result = None
         st.session_state.recommend_sig = None
 
-    if (
-        page == "🎯 유사도"
-        and st.session_state.get("recommend_sig") != recommend_sig
-    ):
+    if st.session_state.get("recommend_sig") != recommend_sig:
         source_video_id = extract_video_id(youtube_url)
         details_now = st.session_state.source_details
         tfidf_now = st.session_state.tfidf_result
@@ -1238,14 +1287,12 @@ except Exception as error:
 
 
 # =========================================================
-# 17. 페이지 렌더링
+# 19. 화면: 영상 정보 → 요약 → TF-IDF → 유사도
 # =========================================================
 
 source_details = st.session_state.source_details
 tfidf_result = st.session_state.tfidf_result
 recommendation_result = st.session_state.recommendation_result
-
-st.divider()
 
 
 def render_method_tab(key):
@@ -1329,103 +1376,103 @@ def render_method_tab(key):
     )
 
 
-# ---------- 📝 요약 ----------
-if page == "📝 요약":
-    left, right = st.columns([1, 2])
+# ---------- 🎥 영상 정보 ----------
+st.markdown("<div id='sec-info'></div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>🎥 영상 정보</div>", unsafe_allow_html=True)
 
-    with left:
-        st.video(source_details["url"])
-
-    with right:
-        st.markdown("### " + source_details["title"])
-        st.caption(
-            source_details["channel_title"]
-            + " · 분석 데이터: "
-            + st.session_state.source_label
-        )
-        m1, m2, m3 = st.columns(3)
-        m1.metric("조회수", f"{source_details['views']:,}")
-        m2.metric("좋아요", f"{source_details['likes']:,}")
-        m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
-
-    st.subheader("핵심 내용 요약")
-
-    ai = tfidf_result.get("ai_summary_result", {"success": False})
-
-    if ai.get("success"):
-        st.markdown(ai["text"])
-        st.caption("✨ AI가 자막 내용을 바탕으로 정리한 요약입니다.")
-    else:
-        st.write(tfidf_result["extractive_summary"])
-        st.warning("AI 요약을 사용할 수 없어 자막에서 추출한 문장을 표시했습니다.")
-        st.write("오류 유형: " + ai.get("error_type", "알 수 없음"))
-        st.code(ai.get("error_message") or "오류 메시지가 없습니다.")
-
-    st.subheader("핵심어 (최대 5개)")
-    st.markdown(
-        "".join(
-            f"<span class='chip'>{k}</span>"
-            for k in tfidf_result["keywords"][:MAX_KEYWORDS]
-        ),
-        unsafe_allow_html=True,
+left, right = st.columns([1, 2])
+with left:
+    st.video(source_details["url"])
+with right:
+    st.markdown("### " + source_details["title"])
+    st.caption(
+        source_details["channel_title"]
+        + " · 분석 데이터: "
+        + st.session_state.source_label
     )
+    m1, m2, m3 = st.columns(3)
+    m1.metric("조회수", f"{source_details['views']:,}")
+    m2.metric("좋아요", f"{source_details['likes']:,}")
+    m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
+    st.caption("후보 검색어: " + st.session_state.search_query)
 
-    with st.expander("원문 근거 문장 보기 (TF-IDF 추출 원본)"):
-        st.write(tfidf_result["extractive_summary"])
+
+# ---------- 📝 요약 ----------
+st.markdown("<div id='sec-summary'></div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>📝 요약</div>", unsafe_allow_html=True)
+
+ai = tfidf_result.get("ai_summary_result", {"success": False})
+
+if ai.get("success"):
+    for line in ai["text"].splitlines():
+        if line.strip():
+            st.markdown("- " + line.strip())
+    st.caption("✨ AI가 자막 내용을 바탕으로 정리한 요약입니다.")
+else:
+    st.write(tfidf_result["extractive_summary"])
+    st.warning("AI 요약을 사용할 수 없어 자막에서 추출한 문장을 표시했습니다.")
+    st.write("오류 유형: " + ai.get("error_type", "알 수 없음"))
+    st.code(ai.get("error_message") or "오류 메시지가 없습니다.")
+
+st.markdown("**핵심어 (최대 5개)**")
+st.markdown(
+    "".join(
+        f"<span class='chip'>{k}</span>"
+        for k in tfidf_result["keywords"][:MAX_KEYWORDS]
+    ),
+    unsafe_allow_html=True,
+)
+
+with st.expander("원문 근거 문장 보기 (TF-IDF 추출 원본)"):
+    st.write(tfidf_result["extractive_summary"])
 
 
 # ---------- 📊 TF-IDF ----------
-elif page == "📊 TF-IDF":
-    c1, c2 = st.columns(2)
+st.markdown("<div id='sec-tfidf'></div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>📊 TF-IDF 분석</div>", unsafe_allow_html=True)
 
-    with c1:
-        st.subheader("핵심어 (최대 5개)")
-        st.dataframe(
-            tfidf_result["keyword_df"], use_container_width=True, hide_index=True
-        )
-        st.bar_chart(
-            tfidf_result["keyword_df"].set_index("단어 또는 구")["TF-IDF 점수"]
-        )
-
-    with c2:
-        st.subheader("중요 문장")
-        st.dataframe(
-            tfidf_result["sentence_score_df"],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    with st.expander("원문 근거 문장 (TF-IDF 추출 원본)"):
-        st.write(tfidf_result["extractive_summary"])
-
-    e1, e2 = st.columns(2)
-    e1.download_button(
-        "키워드 CSV",
-        to_csv_bytes(tfidf_result["keyword_df"]),
-        "tfidf_keywords.csv",
-        "text/csv",
-        use_container_width=True,
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader("핵심어")
+    st.dataframe(
+        tfidf_result["keyword_df"], use_container_width=True, hide_index=True
     )
-    e2.download_button(
-        "문장 벡터 CSV",
-        to_csv_bytes(tfidf_result["sentence_feature_df"]),
-        "tfidf_sentence_vectors.csv",
-        "text/csv",
+    st.bar_chart(
+        tfidf_result["keyword_df"].set_index("단어 또는 구")["TF-IDF 점수"]
+    )
+with c2:
+    st.subheader("중요 문장")
+    st.dataframe(
+        tfidf_result["sentence_score_df"],
         use_container_width=True,
+        hide_index=True,
     )
 
+e1, e2 = st.columns(2)
+e1.download_button(
+    "키워드 CSV",
+    to_csv_bytes(tfidf_result["keyword_df"]),
+    "tfidf_keywords.csv",
+    "text/csv",
+    use_container_width=True,
+)
+e2.download_button(
+    "문장 벡터 CSV",
+    to_csv_bytes(tfidf_result["sentence_feature_df"]),
+    "tfidf_sentence_vectors.csv",
+    "text/csv",
+    use_container_width=True,
+)
 
-# ---------- 🎯 유사도 ----------
-else:
-    if recommendation_result is None:
-        st.info("추천 결과가 없습니다.")
-    else:
-        st.write("사용한 검색어: `" + st.session_state.search_query + "`")
 
-        tab_cos, tab_euc, tab_jac = st.tabs(["코사인", "유클리드", "자카드"])
-        with tab_cos:
-            render_method_tab("cosine")
-        with tab_euc:
-            render_method_tab("euclidean")
-        with tab_jac:
-            render_method_tab("jaccard")
+# ---------- 🎯 유사도 추천 ----------
+st.markdown("<div id='sec-similar'></div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>🎯 유사도 추천</div>", unsafe_allow_html=True)
+
+tab_cos, tab_euc, tab_jac = st.tabs(["코사인", "유클리드", "자카드"])
+with tab_cos:
+    render_method_tab("cosine")
+with tab_euc:
+    render_method_tab("euclidean")
+with tab_jac:
+    render_method_tab("jaccard")
