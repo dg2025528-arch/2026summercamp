@@ -1542,7 +1542,7 @@ with right:
     m1.metric("조회수", f"{source_details['views']:,}")
     m2.metric("좋아요", f"{source_details['likes']:,}")
     m3.metric("일평균 조회", f"{source_details['daily_views']:,.0f}")
-        query_chips = "".join(
+    query_chips = "".join(
         f"<span class='q-chip'>{w}</span>"
         for w in st.session_state.search_query.split()
     )
