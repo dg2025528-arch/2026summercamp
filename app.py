@@ -1033,54 +1033,173 @@ def perform_tfidf_analysis(
     </style>
     <div class="hero">    return video_id, video_details, tfidf_result
 # =========================================================
-# 14. 스타일
+# 14. 스타일 (글래스모피즘 + 애니메이션)
 # =========================================================
 
 st.markdown(
     """
     <style>
     html {scroll-behavior: smooth;}
-    .block-container {max-width: 1200px; padding-top: 2rem;}
-    .hero {padding: 1.4rem 1.6rem; border-radius: 16px; color: white;
-           background: linear-gradient(135deg,#ff4b4b 0%,#8e2de2 100%);
-           margin-bottom: 1rem;}
-    .hero h1 {margin: 0; font-size: 1.8rem; color: white;}
-    .hero p {margin: .3rem 0 0; opacity: .92;}
-    .landing {text-align:center; padding: 3rem 1rem 1.5rem;}
-    .landing h1 {font-size: 2.8rem; margin-bottom: .5rem;}
-    .landing p {font-size: 1.15rem; color: #666;}
-    .chip {display:inline-block; padding:2px 10px; margin:2px;
-           border-radius:999px; background:#f0f2f6; color:#262730;
-           font-size:.85rem;}
-    .badge {display:inline-block; padding:2px 10px; border-radius:8px;
-            background:#e8f5e9; color:#1b5e20; font-weight:600;
-            font-size:.85rem;}
-    .section-title {font-size: 1.9rem; font-weight: 800; margin: 2rem 0 .5rem;
-                    padding-bottom: .4rem; border-bottom: 3px solid #ff4b4b;}
 
-    /* 사이드바 버튼: 폰트 크게 */
+    /* ---------- 키프레임 ---------- */
+    @keyframes aurora {
+        0%   {background-position: 0% 50%;}
+        50%  {background-position: 100% 50%;}
+        100% {background-position: 0% 50%;}
+    }
+    @keyframes fadeUp {
+        from {opacity: 0; transform: translateY(28px);}
+        to   {opacity: 1; transform: translateY(0);}
+    }
+    @keyframes dropIn {
+        from {opacity: 0; transform: translateY(-40px);}
+        to   {opacity: 1; transform: translateY(0);}
+    }
+    @keyframes breathe {
+        0%, 100% {transform: scale(1);    box-shadow: 0 6px 20px rgba(142,45,226,.35);}
+        50%      {transform: scale(1.04); box-shadow: 0 10px 34px rgba(255,75,75,.55);}
+    }
+    @keyframes glowPulse {
+        0%, 100% {box-shadow: 0 0 8px rgba(142,45,226,.45);}
+        50%      {box-shadow: 0 0 22px rgba(255,75,75,.75);}
+    }
+    @keyframes shine {
+        from {background-position: -200% 0;}
+        to   {background-position: 200% 0;}
+    }
+
+    /* ---------- 배경: 천천히 흐르는 오로라 ---------- */
+    .stApp {
+        background: linear-gradient(120deg,
+            #c9b6ff, #a8c8ff, #ffc2e2, #ffd9b8, #b8f0e0, #c9b6ff);
+        background-size: 400% 400%;
+        animation: aurora 28s ease infinite;
+    }
+    [data-testid="stHeader"] {background: transparent;}
+    .block-container {max-width: 1200px; padding-top: 2rem;}
+
+    /* ---------- 글래스 공통 ---------- */
+    [data-testid="stSidebar"] > div:first-child {
+        background: rgba(255,255,255,.35);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-right: 1px solid rgba(255,255,255,.6);
+    }
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stExpander"],
+    [data-testid="stMetric"],
+    [data-testid="stForm"] {
+        background: rgba(255,255,255,.45);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,.7) !important;
+        border-radius: 18px !important;
+        box-shadow: 0 8px 32px rgba(80,60,160,.15);
+    }
+    [data-testid="stMetric"] {padding: .7rem 1rem;}
+
+    /* ---------- 카드: 등장 + 호버 ---------- */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        animation: fadeUp .7s ease both;
+        transition: transform .25s ease, box-shadow .25s ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 16px 42px rgba(80,60,160,.28);
+    }
+    [data-testid="stExpander"] {animation: fadeUp .6s ease both;}
+
+    /* ---------- 섹션 제목: 스크롤하면 나타남 ---------- */
+    .section-title {
+        font-size: 1.9rem; font-weight: 800; margin: 2.4rem 0 .8rem;
+        padding: .6rem 1.2rem; border-radius: 14px;
+        background: rgba(255,255,255,.5);
+        backdrop-filter: blur(12px);
+        border-left: 6px solid #ff4b4b;
+        animation: fadeUp .8s ease both;
+    }
+    @supports (animation-timeline: view()) {
+        .section-title, [data-testid="stVerticalBlockBorderWrapper"] {
+            animation: fadeUp linear both;
+            animation-timeline: view();
+            animation-range: entry 0% entry 35%;
+        }
+    }
+
+    /* ---------- 시작 화면 ---------- */
+    .landing {text-align:center; padding: 3.5rem 1rem 1.5rem;}
+    .landing h1 {
+        font-size: 3rem; font-weight: 900; margin-bottom: .6rem;
+        background: linear-gradient(90deg,#ff4b4b,#8e2de2,#2b7bff,#ff4b4b);
+        background-size: 200% auto;
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: dropIn .9s ease both, shine 6s linear infinite;
+    }
+    .landing p {font-size: 1.15rem; color: #3a3a55;
+                animation: fadeUp 1s ease .3s both;}
+    [data-testid="stForm"] {animation: fadeUp 1s ease .5s both;}
+    [data-testid="stFormSubmitButton"] button {
+        height: 3.4rem; font-size: 1.3rem; font-weight: 800;
+        border: none; border-radius: 14px; color: #fff;
+        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
+        animation: breathe 2.6s ease-in-out infinite;
+    }
+
+    /* ---------- 사이드바 버튼 ---------- */
     [data-testid="stSidebar"] .stButton button,
     [data-testid="stSidebar"] .stButton button p {
         font-size: 1.5rem !important; font-weight: 800 !important;
     }
     [data-testid="stSidebar"] .stButton button {
-        width: 100%; height: 4rem; min-height: 4rem; border-radius: 12px;
+        width: 100%; height: 4rem; min-height: 4rem; border-radius: 14px;
+        background: rgba(255,255,255,.6);
+        border: 1px solid rgba(255,255,255,.8);
+        transition: transform .2s ease, box-shadow .2s ease;
+    }
+    [data-testid="stSidebar"] .stButton button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 8px 22px rgba(142,45,226,.3);
     }
     [data-testid="stSidebar"] .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #ff4b4b 0%, #8e2de2 100%);
+        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
         border: none; color: #fff;
+        animation: glowPulse 2.4s ease-in-out infinite;
     }
-    .nav-link {display:block; text-align:center; text-decoration:none !important;
-               font-size: 1.5rem; font-weight: 800; padding: 1rem 0;
-               margin-bottom: .7rem; border-radius: 12px;
-               border: 1px solid #d0d4dc; background: #f7f8fa; color: #262730 !important;}
-    .nav-link:hover {border-color:#ff4b4b; background:#fff3f3;}
+    .nav-link {
+        display:block; text-align:center; text-decoration:none !important;
+        font-size: 1.5rem; font-weight: 800; padding: 1rem 0;
+        margin-bottom: .7rem; border-radius: 14px; color: #262730 !important;
+        background: rgba(255,255,255,.6);
+        border: 1px solid rgba(255,255,255,.8);
+        transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .nav-link:hover {
+        transform: translateX(6px) scale(1.04);
+        background: linear-gradient(135deg, #ff4b4b, #8e2de2);
+        color: #fff !important;
+        box-shadow: 0 8px 22px rgba(142,45,226,.35);
+    }
+
+    /* ---------- 칩 / 배지 ---------- */
+    .chip {display:inline-block; padding:4px 14px; margin:3px;
+           border-radius:999px; background: rgba(255,255,255,.7);
+           border: 1px solid rgba(255,255,255,.9); color:#262730;
+           font-size:.9rem; font-weight:600;
+           transition: transform .2s ease;}
+    .chip:hover {transform: translateY(-3px) scale(1.06);}
+    .badge {display:inline-block; padding:3px 12px; border-radius:10px;
+            background:#e8f5e9; color:#1b5e20; font-weight:700;
+            font-size:.9rem;}
+
+    /* ---------- 움직임 줄이기 설정 존중 ---------- */
+    @media (prefers-reduced-motion: reduce) {
+        * {animation: none !important; transition: none !important;}
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
-
-
 # =========================================================
 # 15. 상태 + 설정(사이드바)
 # =========================================================
