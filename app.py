@@ -3161,7 +3161,8 @@ if (
                 "(상위 추천 기준)"
             )
 
-            multi_methodations[
+               multi_method_chart = (
+                shown_recommendations[
                     [
                         "title",
                         "cosine_similarity",
@@ -3188,6 +3189,7 @@ if (
                 )
                 .set_index("title")
             )
+
 
             st.bar_chart(
                 multi_method_chart
